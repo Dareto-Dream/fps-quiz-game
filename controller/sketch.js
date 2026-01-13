@@ -113,27 +113,51 @@ function connectToServer() {
   
   document.getElementById('connect-btn').disabled = true;
   document.getElementById('connect-btn').textContent = 'CONNECTING...';
+  showConnectionError(''); // Clear previous errors
   
   const serverUrl = `http://${serverIP}:${serverPort}`;
+  console.log('Attempting to connect to:', serverUrl);
+  
+  // Close existing socket if any
+  if (socket) {
+    socket.disconnect();
+  }
   
   socket = io(serverUrl, {
-    transports: ['websocket', 'polling'],
-    reconnection: true,
-    reconnectionDelay: 1000,
-    timeout: 10000
+    transports: ['polling', 'websocket'], // Try polling first, more reliable
+    reconnection: false, // Disable auto-reconnect for initial connection
+    timeout: 15000,
+    forceNew: true
   });
   
+  // Connection timeout
+  const connectionTimeout = setTimeout(() => {
+    if (!connected) {
+      console.log('Connection timeout');
+      showConnectionError('Connection timed out. Make sure you are on the same network as the host.');
+      document.getElementById('connect-btn').disabled = false;
+      document.getElementById('connect-btn').textContent = 'CONNECT';
+      socket.disconnect();
+    }
+  }, 15000);
+  
   socket.on('connect', () => {
-    console.log('Connected to server');
+    console.log('Socket connected, joining room:', code);
     socket.emit('join-room', { roomCode: code });
   });
   
   socket.on('room-joined', (data) => {
+    clearTimeout(connectionTimeout);
     connected = true;
     playerId = data.playerId;
     playerColor = data.color;
     playerColorName = data.colorName;
     roomCode = data.roomCode;
+    
+    console.log('Successfully joined room as:', playerColorName);
+    
+    // Enable reconnection now that we're connected
+    socket.io.opts.reconnection = true;
     
     document.getElementById('connection-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
@@ -146,13 +170,17 @@ function connectToServer() {
   });
   
   socket.on('join-error', (data) => {
+    clearTimeout(connectionTimeout);
+    console.log('Join error:', data.message);
     showConnectionError(data.message);
     document.getElementById('connect-btn').disabled = false;
     document.getElementById('connect-btn').textContent = 'CONNECT';
   });
   
   socket.on('connect_error', (error) => {
-    showConnectionError('Connection failed. Check IP and port.');
+    clearTimeout(connectionTimeout);
+    console.log('Connection error:', error.message);
+    showConnectionError(`Connection failed: ${error.message || 'Cannot reach server'}`);
     document.getElementById('connect-btn').disabled = false;
     document.getElementById('connect-btn').textContent = 'CONNECT';
   });
@@ -167,8 +195,12 @@ function connectToServer() {
   socket.on('match-end', handleMatchEnd);
   socket.on('host-disconnected', handleHostDisconnected);
   
-  socket.on('disconnect', () => {
-    console.log('Disconnected from server');
+  socket.on('disconnect', (reason) => {
+    console.log('Disconnected:', reason);
+    if (connected) {
+      // Only show error if we were previously connected
+      showConnectionError('Disconnected from server: ' + reason);
+    }
   });
 }
 
@@ -256,7 +288,145 @@ function initP5() {
       return false;
     };
     
+    // Mouse support for desktop testing
+    p.mousePressed = function(event) {
+      if (event.target.tagName !== 'CANVAS') return true;
+      
+      const x = p.mouseX;
+      const y = p.mouseY;
+      
+      // Check shoot button
+      const shootDist = p.dist(x, y, shootButtonX, shootButtonY);
+      if (shootDist < shootButtonRadius) {
+        shootActive = true;
+        shooting = true;
+        return false;
+      }
+      
+      // Check reload button
+      if (x > reloadButtonX && x < reloadButtonX + reloadButtonW &&
+          y > reloadButtonY && y < reloadButtonY + reloadButtonH) {
+        requestQuiz();
+        return false;
+      }
+      
+      // Left side for joystick
+      if (x < p.width * 0.5) {
+        joystickActive = true;
+        joystickStartX = x;
+        joystickStartY = y;
+        joystickX = x;
+        joystickY = y;
+        return false;
+      }
+      
+      // Right side for look
+      if (x >= p.width * 0.5 && shootDist >= shootButtonRadius) {
+        lookActive = true;
+        lookStartX = x;
+        lookStartY = y;
+        return false;
+      }
+      
+      return false;
+    };
+    
+    p.mouseDragged = function(event) {
+      if (event.target.tagName !== 'CANVAS') return true;
+      
+      const x = p.mouseX;
+      const y = p.mouseY;
+      
+      // Joystick movement
+      if (joystickActive) {
+        joystickX = x;
+        joystickY = y;
+        
+        const maxDist = 60;
+        const dx = joystickX - joystickStartX;
+        const dy = joystickY - joystickStartY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist > 0) {
+          const clampedDist = Math.min(dist, maxDist);
+          moveX = (dx / dist) * (clampedDist / maxDist);
+          moveY = (dy / dist) * (clampedDist / maxDist);
+        }
+      }
+      
+      // Look movement
+      if (lookActive) {
+        const dx = x - lookStartX;
+        const dy = y - lookStartY;
+        
+        lookDeltaX = dx * 0.01;
+        lookDeltaY = dy * 0.01;
+        
+        lookStartX = x;
+        lookStartY = y;
+      }
+      
+      return false;
+    };
+    
+    p.mouseReleased = function(event) {
+      joystickActive = false;
+      moveX = 0;
+      moveY = 0;
+      
+      lookActive = false;
+      
+      shootActive = false;
+      shooting = false;
+      
+      return false;
+    };
+    
+    // Keyboard support for desktop testing
+    p.keyPressed = function() {
+      if (p.key === ' ' || p.key === 'f' || p.key === 'F') {
+        shootActive = true;
+        shooting = true;
+      }
+      if (p.key === 'r' || p.key === 'R') {
+        requestQuiz();
+      }
+      updateKeyboardMovement(p);
+      return false;
+    };
+    
+    p.keyReleased = function() {
+      if (p.key === ' ' || p.key === 'f' || p.key === 'F') {
+        shootActive = false;
+        shooting = false;
+      }
+      updateKeyboardMovement(p);
+      return false;
+    };
+    
   }, 'game-canvas');
+}
+
+// Track pressed keys for smooth movement
+const keysPressed = {};
+
+function updateKeyboardMovement(p) {
+  keysPressed[p.key.toLowerCase()] = p.keyIsPressed && (p.key.toLowerCase() === 'w' || p.key.toLowerCase() === 'a' || p.key.toLowerCase() === 's' || p.key.toLowerCase() === 'd');
+  
+  // Calculate movement from WASD
+  let kbMoveX = 0;
+  let kbMoveY = 0;
+  
+  if (p.keyIsDown(87) || p.keyIsDown(119)) kbMoveY = -1; // W
+  if (p.keyIsDown(83) || p.keyIsDown(115)) kbMoveY = 1;  // S
+  if (p.keyIsDown(65) || p.keyIsDown(97)) kbMoveX = -1;  // A
+  if (p.keyIsDown(68) || p.keyIsDown(100)) kbMoveX = 1;  // D
+  
+  // Only use keyboard if joystick not active
+  if (!joystickActive) {
+    moveX = kbMoveX;
+    moveY = kbMoveY;
+  }
 }
 
 function calculateUIPositions(p) {
@@ -638,12 +808,22 @@ function drawJoystick(p) {
     p.noStroke();
     p.ellipse(handleX, handleY, 50, 50);
   } else {
-    // Hint text
+    // Hint text - different for touch vs desktop
     p.fill(100);
     p.textSize(14);
     p.textAlign(p.CENTER, p.CENTER);
     p.noStroke();
-    p.text('TOUCH TO MOVE', p.width * 0.25, p.height * 0.7);
+    
+    // Check if likely mobile (touch support)
+    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    
+    if (isMobile) {
+      p.text('TOUCH TO MOVE', p.width * 0.25, p.height * 0.7);
+    } else {
+      p.text('WASD or DRAG TO MOVE', p.width * 0.25, p.height * 0.65);
+      p.text('SPACE/F = Fire, R = Reload', p.width * 0.25, p.height * 0.72);
+      p.text('Drag right side to look', p.width * 0.25, p.height * 0.79);
+    }
   }
 }
 

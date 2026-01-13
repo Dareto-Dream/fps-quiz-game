@@ -11,9 +11,21 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST"]
+    methods: ["GET", "POST"],
+    credentials: true
   },
-  transports: ['websocket', 'polling']
+  transports: ['polling', 'websocket'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000
+});
+
+// Enable CORS for all routes
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
 });
 
 // Serve static files
@@ -91,6 +103,20 @@ function getLocalIPAddress() {
   return 'localhost';
 }
 
+// Get all local IP addresses (for debugging)
+function getAllLocalIPs() {
+  const ips = [];
+  const interfaces = os.networkInterfaces();
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        ips.push({ name: name, address: iface.address });
+      }
+    }
+  }
+  return ips;
+}
+
 // Generate random 4-digit room code
 function generateRoomCode() {
   let code;
@@ -142,7 +168,7 @@ function releasePlayerColor(roomCode, colorIndex) {
 
 // Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`);
+  console.log(`[${new Date().toISOString()}] Client connected: ${socket.id} from ${socket.handshake.address}`);
   
   // Host creates room
   socket.on('create-room', (data) => {
@@ -378,6 +404,8 @@ io.on('connection', (socket) => {
 // Start server
 server.listen(config.SERVER_PORT, '0.0.0.0', () => {
   const ip = getLocalIPAddress();
+  const allIPs = getAllLocalIPs();
+  
   console.log('');
   console.log('='.repeat(50));
   console.log('🎮 MULTIPLAYER FPS SERVER STARTED');
@@ -387,6 +415,13 @@ server.listen(config.SERVER_PORT, '0.0.0.0', () => {
   console.log('');
   console.log(`Host:     http://${ip}:${config.SERVER_PORT}/host`);
   console.log(`Control:  http://${ip}:${config.SERVER_PORT}/controller`);
+  console.log('');
+  if (allIPs.length > 1) {
+    console.log('All available network interfaces:');
+    allIPs.forEach(({ name, address }) => {
+      console.log(`  ${name}: ${address}`);
+    });
+  }
   console.log('='.repeat(50));
   console.log('');
 });

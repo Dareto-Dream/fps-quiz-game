@@ -71,6 +71,7 @@ async function init() {
   initAudio();
   initSocket();
   createArena();
+  console.log('Game initialized');
   
   // Start render loop
   animate();
@@ -477,12 +478,11 @@ function createPlayer(playerId, color, colorName) {
   
   scene.add(playerGroup);
   
-  // Store player data
+  // Store player data - NOTE: we use group.position directly for all position access
   players[playerId] = {
     id: playerId,
     colorName: colorName,
     color: color,
-    position: playerGroup.position,
     rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
     velocity: new THREE.Vector3(),
     health: CONFIG.PLAYER_MAX_HEALTH,
@@ -532,8 +532,10 @@ function getRandomSpawnPoint() {
 
 function respawnPlayer(player) {
   const spawnPoint = getRandomSpawnPoint();
-  player.position.set(spawnPoint.x, 0, spawnPoint.z);
+  // Directly set position on the group
+  player.group.position.set(spawnPoint.x, 0, spawnPoint.z);
   player.rotation.set(0, Math.random() * Math.PI * 2, 0);
+  player.group.rotation.y = player.rotation.y;
   player.health = CONFIG.PLAYER_MAX_HEALTH;
   player.ammo = CONFIG.PLAYER_START_AMMO;
   player.alive = true;
@@ -632,17 +634,6 @@ function updateAlivePlayer(player, deltaTime) {
   
   // Calculate movement - only if there's actual input
   if (Math.abs(player.lastInput.moveX) > 0.001 || Math.abs(player.lastInput.moveY) > 0.001) {
-    if (Math.random() < 0.1) { // Log 10% of movement frames
-      console.log('[host] MOVING player', {
-        id: player.id.substring(0, 8),
-        moveX: player.lastInput.moveX.toFixed(2),
-        moveY: player.lastInput.moveY.toFixed(2),
-        deltaTime: deltaTime.toFixed(3),
-        rotY: player.rotation.y.toFixed(2),
-        posBefore: `${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}`
-      });
-    }
-    
     const moveSpeed = CONFIG.MOVE_SPEED * deltaTime;
     
     // Calculate direction vectors relative to player's rotation
@@ -663,24 +654,22 @@ function updateAlivePlayer(player, deltaTime) {
     movement.addScaledVector(forward, -player.lastInput.moveY * moveSpeed); // Forward/backward
     movement.addScaledVector(right, player.lastInput.moveX * moveSpeed);     // Left/right
     
-    console.log('[host] movement vector', {
-      movement: `${movement.x.toFixed(2)}, ${movement.z.toFixed(2)}`,
-      moveSpeed: moveSpeed.toFixed(3)
-    });
+    // Get current position from group
+    const currentX = player.group.position.x;
+    const currentZ = player.group.position.z;
     
-    // Apply movement
-    const newPos = player.position.clone().add(movement);
+    // Calculate new position
+    let newX = currentX + movement.x;
+    let newZ = currentZ + movement.z;
     
     // Boundary collision
     const boundary = CONFIG.ARENA.WIDTH / 2 - 1;
-    newPos.x = Math.max(-boundary, Math.min(boundary, newPos.x));
-    newPos.z = Math.max(-boundary, Math.min(boundary, newPos.z));
+    newX = Math.max(-boundary, Math.min(boundary, newX));
+    newZ = Math.max(-boundary, Math.min(boundary, newZ));
     
-    player.position.copy(newPos);
-    
-    if (Math.random() < 0.1) { // Log 10% of movement frames
-      console.log('[host] posAfter', `${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}`);
-    }
+    // DIRECTLY set the group position - this is the key fix
+    player.group.position.x = newX;
+    player.group.position.z = newZ;
   }
   
   // Handle shooting
@@ -695,6 +684,15 @@ function updateAlivePlayer(player, deltaTime) {
   // Reset look deltas (they're deltas, not absolute)
   player.lastInput.lookDeltaX = 0;
   player.lastInput.lookDeltaY = 0;
+}
+
+// FIX: Added missing updateDeadPlayer function
+function updateDeadPlayer(player, deltaTime) {
+  player.respawnTimer -= deltaTime;
+  
+  if (player.respawnTimer <= 0) {
+    respawnPlayer(player);
+  }
 }
 
 // ============================================
@@ -715,8 +713,8 @@ function processShot(playerId) {
   aimDirection.applyEuler(player.rotation);
   aimDirection.normalize();
   
-  // Ray origin at gun position
-  const rayOrigin = player.position.clone();
+  // Ray origin at gun position - use group.position
+  const rayOrigin = player.group.position.clone();
   rayOrigin.y += 1.3; // Gun height
   
   raycaster.set(rayOrigin, aimDirection);
@@ -789,7 +787,7 @@ function createHitEffect(position) {
   
   // Animate particles
   let frame = 0;
-  const animate = () => {
+  const animateParticles = () => {
     if (frame > 30) {
       scene.remove(particles);
       return;
@@ -799,9 +797,9 @@ function createHitEffect(position) {
       p.velocity.y -= 0.1;
     });
     frame++;
-    requestAnimationFrame(animate);
+    requestAnimationFrame(animateParticles);
   };
-  animate();
+  animateParticles();
 }
 
 function handleKill(killer, victim) {
@@ -864,16 +862,16 @@ function updateCamera(deltaTime) {
     
     const player = players[streakLeader];
     
-    // Position camera behind and above streak leader
+    // Position camera behind and above streak leader - use group.position
     const offset = new THREE.Vector3(0, 8, 12);
     offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
-    const targetPos = player.position.clone().add(offset);
+    const targetPos = player.group.position.clone().add(offset);
     
     // Smooth camera transition
     camera.position.lerp(targetPos, 0.05);
     
-    // Look at player
-    const lookTarget = player.position.clone();
+    // Look at player - use group.position
+    const lookTarget = player.group.position.clone();
     lookTarget.y += 1.5;
     camera.lookAt(lookTarget);
     
@@ -1015,7 +1013,7 @@ function broadcastGameState() {
   socket.emit('game-state', state);
   socket.emit('match-timer', { timeRemaining: matchTimer });
   
-  // Full state with positions for controller 3D rendering
+  // Full state with positions for controller 3D rendering - use group.position
   const fullState = {
     players: {},
     timestamp: now
@@ -1023,9 +1021,9 @@ function broadcastGameState() {
   
   Object.values(players).forEach(p => {
     fullState.players[p.id] = {
-      x: p.position.x,
-      y: p.position.y,
-      z: p.position.z,
+      x: p.group.position.x,
+      y: p.group.position.y,
+      z: p.group.position.z,
       rotY: p.rotation.y,
       rotX: p.rotation.x,
       color: p.color,

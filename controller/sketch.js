@@ -61,15 +61,10 @@ const ARENA = { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 };
 // INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
-  // Auto-fill server IP from current hostname
-  const currentHost = window.location.hostname;
-  if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
-    document.getElementById('server-ip').value = currentHost;
-  }
-  
-  const currentPort = window.location.port;
-  if (currentPort) {
-    document.getElementById('server-port').value = currentPort;
+  // Auto-fill server URL from current page URL (works for hosted servers)
+  const currentUrl = window.location.origin;
+  if (currentUrl) {
+    document.getElementById('server-url').value = currentUrl;
   }
   
   // Event listeners
@@ -344,11 +339,10 @@ function updateKeyboardInput() {
 // CONNECTION
 // ============================================
 function connectToServer() {
-  const serverIP = document.getElementById('server-ip').value.trim();
-  const serverPort = document.getElementById('server-port').value.trim();
+  let serverUrl = document.getElementById('server-url').value.trim();
   const code = document.getElementById('room-code').value.trim();
   
-  if (!serverIP || !serverPort || !code) {
+  if (!serverUrl || !code) {
     showConnectionError('Please fill in all fields');
     return;
   }
@@ -358,11 +352,17 @@ function connectToServer() {
     return;
   }
   
+  // Ensure URL has protocol
+  if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+    serverUrl = 'https://' + serverUrl;
+  }
+  
+  // Remove trailing slash if present
+  serverUrl = serverUrl.replace(/\/$/, '');
+  
   document.getElementById('connect-btn').disabled = true;
   document.getElementById('connect-btn').textContent = 'CONNECTING...';
   showConnectionError('');
-  
-  const serverUrl = `http://${serverIP}:${serverPort}`;
   
   if (socket) socket.disconnect();
   
@@ -612,10 +612,12 @@ function handleFullState(data) {
     myRotationY = myData.rotY;
     myRotationX = myData.rotX;
     
-    // Update camera
+    // Update camera position from server (authoritative)
     camera.position.set(myData.x, myData.y + 1.7, myData.z);
-    camera.rotation.y = myRotationY;
-    camera.rotation.x = myRotationX;
+    
+    // DON'T overwrite local rotation - let client handle rotation locally
+    // The server rotation is used for other players, not the local player
+    // This prevents the "tug of war" between client and server rotation updates
   }
   
   // Update other players
@@ -888,6 +890,8 @@ function animate() {
   
   if (!renderer || !scene || !camera) return;
 
+  const delta = clock.getDelta();
+  
   tickMatchTimer();
   
   // Apply look rotation locally for responsive feel
@@ -895,6 +899,40 @@ function animate() {
     camera.rotation.y -= lookDeltaX;
     camera.rotation.x -= lookDeltaY;
     camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+  }
+  
+  // Client-side prediction: move camera locally based on input for smoother feel
+  // Server will send authoritative position updates via full-state
+  if (isAlive && (moveX !== 0 || moveY !== 0)) {
+    const moveSpeed = 8; // Match server CONFIG.MOVE_SPEED
+    
+    // Calculate movement direction based on camera's horizontal rotation
+    const forward = new THREE.Vector3(0, 0, -1);
+    const right = new THREE.Vector3(1, 0, 0);
+    
+    // Apply camera's Y rotation to directions
+    forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), camera.rotation.y);
+    right.applyAxisAngle(new THREE.Vector3(0, 1, 0), camera.rotation.y);
+    
+    // Calculate movement vector
+    const movement = new THREE.Vector3();
+    movement.addScaledVector(right, moveX);
+    movement.addScaledVector(forward, moveY);
+    
+    if (movement.length() > 0) {
+      movement.normalize();
+      movement.multiplyScalar(moveSpeed * delta);
+      
+      // Apply movement to camera position
+      camera.position.x += movement.x;
+      camera.position.z += movement.z;
+      
+      // Clamp to arena bounds
+      const halfWidth = ARENA.WIDTH / 2 - 1;
+      const halfDepth = ARENA.DEPTH / 2 - 1;
+      camera.position.x = Math.max(-halfWidth, Math.min(halfWidth, camera.position.x));
+      camera.position.z = Math.max(-halfDepth, Math.min(halfDepth, camera.position.z));
+    }
   }
   
   renderer.render(scene, camera);

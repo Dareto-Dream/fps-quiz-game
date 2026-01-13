@@ -17,11 +17,25 @@ const CONFIG = {
   STREAK_THRESHOLD: 3,
   QUIZ_REWARDS: { 0: 0, 1: 3, 2: 5, 3: 7 },
   ARENA: { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 },
+  MAX_PLAYERS: 24,
   SPAWN_POINTS: [
+    // Corners
     { x: -20, z: -20 }, { x: 20, z: -20 },
     { x: -20, z: 20 }, { x: 20, z: 20 },
+    // Edges
     { x: 0, z: -22 }, { x: 0, z: 22 },
-    { x: -22, z: 0 }, { x: 22, z: 0 }
+    { x: -22, z: 0 }, { x: 22, z: 0 },
+    // Mid positions
+    { x: -15, z: -10 }, { x: 15, z: -10 },
+    { x: -15, z: 10 }, { x: 15, z: 10 },
+    { x: -10, z: -15 }, { x: 10, z: -15 },
+    { x: -10, z: 15 }, { x: 10, z: 15 },
+    // Inner ring
+    { x: -8, z: -8 }, { x: 8, z: -8 },
+    { x: -8, z: 8 }, { x: 8, z: 8 },
+    // Additional positions
+    { x: -18, z: -10 }, { x: 18, z: -10 },
+    { x: -18, z: 10 }, { x: 18, z: 10 }
   ]
 };
 
@@ -943,7 +957,7 @@ function updateLeaderboard() {
 
 function updatePlayerCount() {
   document.getElementById('current-players').textContent = Object.keys(players).length;
-  document.getElementById('max-players').textContent = '8';
+  document.getElementById('max-players').textContent = CONFIG.MAX_PLAYERS;
 }
 
 function updateTimerDisplay() {

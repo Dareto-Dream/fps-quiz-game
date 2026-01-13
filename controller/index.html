@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Arena FPS - Controller</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #1a1a2e;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    #connection-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 20px;
+    }
+    
+    #connection-screen h1 {
+      color: #00d4ff;
+      font-size: 32px;
+      margin-bottom: 30px;
+    }
+    
+    .input-group {
+      margin-bottom: 20px;
+      width: 100%;
+      max-width: 300px;
+    }
+    
+    .input-group label {
+      display: block;
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+    
+    .input-group input {
+      width: 100%;
+      padding: 15px;
+      font-size: 20px;
+      background: #2a2a4a;
+      border: 2px solid #444;
+      border-radius: 10px;
+      color: white;
+      text-align: center;
+    }
+    
+    .input-group input:focus {
+      outline: none;
+      border-color: #00d4ff;
+    }
+    
+    #connect-btn {
+      width: 100%;
+      max-width: 300px;
+      padding: 18px;
+      font-size: 22px;
+      font-weight: bold;
+      background: #00d4ff;
+      color: black;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    
+    #connect-btn:active {
+      background: #00a0cc;
+    }
+    
+    #connect-btn:disabled {
+      background: #444;
+      color: #888;
+    }
+    
+    #connection-error {
+      color: #ff4444;
+      margin-top: 15px;
+      text-align: center;
+    }
+    
+    #game-screen {
+      display: none;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    
+    #game-canvas {
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* Quiz Modal */
+    #quiz-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.95);
+      z-index: 100;
+      padding: 20px;
+      overflow-y: auto;
+    }
+    
+    #quiz-content {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    
+    #quiz-modal h2 {
+      color: #00d4ff;
+      text-align: center;
+      margin-bottom: 20px;
+      font-size: 24px;
+    }
+    
+    .quiz-question {
+      background: #2a2a4a;
+      padding: 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    
+    .quiz-question .question-text {
+      color: white;
+      font-size: 18px;
+      margin-bottom: 15px;
+    }
+    
+    .quiz-option {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      margin-bottom: 10px;
+      background: #3a3a5a;
+      border: 2px solid #555;
+      border-radius: 8px;
+      color: white;
+      font-size: 16px;
+      text-align: left;
+      cursor: pointer;
+    }
+    
+    .quiz-option:active {
+      background: #4a4a6a;
+    }
+    
+    .quiz-option.selected {
+      border-color: #00d4ff;
+      background: #2a4a6a;
+    }
+    
+    #submit-quiz-btn {
+      width: 100%;
+      padding: 18px;
+      font-size: 20px;
+      font-weight: bold;
+      background: #00ff88;
+      color: black;
+      border: none;
+      border-radius: 10px;
+      margin-top: 20px;
+    }
+    
+    #submit-quiz-btn:disabled {
+      background: #444;
+      color: #888;
+    }
+    
+    /* Death Screen */
+    #death-screen {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 0, 0, 0.4);
+      z-index: 50;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+    }
+    
+    #death-screen h1 {
+      color: white;
+      font-size: 48px;
+      text-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+    }
+    
+    #death-screen .killed-by {
+      color: white;
+      font-size: 24px;
+      margin-top: 10px;
+    }
+    
+    #respawn-countdown {
+      color: white;
+      font-size: 72px;
+      margin-top: 20px;
+    }
+    
+    /* Match End Screen */
+    #match-end {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 200;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      padding: 20px;
+    }
+    
+    #match-end h1 {
+      color: #ffd700;
+      font-size: 36px;
+      margin-bottom: 20px;
+    }
+    
+    #match-end .winner-info {
+      font-size: 24px;
+      color: white;
+      margin-bottom: 30px;
+    }
+    
+    #match-end .your-stats {
+      font-size: 20px;
+      color: #00d4ff;
+    }
+  </style>
+</head>
+<body>
+  <!-- Connection Screen -->
+  <div id="connection-screen">
+    <h1>🎮 Arena FPS</h1>
+    
+    <div class="input-group">
+      <label>SERVER IP ADDRESS</label>
+      <input type="text" id="server-ip" placeholder="192.168.1.100" inputmode="text">
+    </div>
+    
+    <div class="input-group">
+      <label>PORT</label>
+      <input type="number" id="server-port" value="3000" inputmode="numeric">
+    </div>
+    
+    <div class="input-group">
+      <label>ROOM CODE</label>
+      <input type="text" id="room-code" placeholder="1234" maxlength="4" inputmode="numeric">
+    </div>
+    
+    <button id="connect-btn">CONNECT</button>
+    
+    <div id="connection-error"></div>
+  </div>
+  
+  <!-- Game Screen (p5.js canvas will be here) -->
+  <div id="game-screen">
+    <div id="game-canvas"></div>
+  </div>
+  
+  <!-- Quiz Modal -->
+  <div id="quiz-modal">
+    <div id="quiz-content">
+      <h2>📚 AMMO QUIZ</h2>
+      <div id="quiz-questions"></div>
+      <button id="submit-quiz-btn" disabled>SUBMIT ANSWERS</button>
+    </div>
+  </div>
+  
+  <!-- Death Screen -->
+  <div id="death-screen">
+    <h1>YOU DIED</h1>
+    <div class="killed-by">Killed by <span id="killer-name">---</span></div>
+    <div id="respawn-countdown">3</div>
+  </div>
+  
+  <!-- Match End Screen -->
+  <div id="match-end">
+    <h1>MATCH OVER</h1>
+    <div class="winner-info" id="winner-info"></div>
+    <div class="your-stats" id="your-final-stats"></div>
+  </div>
+  
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="sketch.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arena FPS - Host Display</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Three.js Canvas Container -->
+  <div id="game-container"></div>
+  
+  <!-- Connection Info (Bottom Left) -->
+  <div id="connection-info">
+    <div id="waiting-message">Starting server...</div>
+    <div id="ip-display" style="display: none;">
+      <div class="label">SERVER IP</div>
+      <div id="ip-address">---</div>
+    </div>
+    <div id="room-display" style="display: none;">
+      <div class="label">ROOM CODE</div>
+      <div id="room-code">----</div>
+    </div>
+  </div>
+  
+  <!-- Player Count (Top Left) -->
+  <div id="player-count">
+    <span id="current-players">0</span>/<span id="max-players">8</span> Players
+  </div>
+  
+  <!-- Match Timer (Top Center) -->
+  <div id="match-timer">
+    <div id="timer-display">5:00</div>
+  </div>
+  
+  <!-- Leaderboard (Top Right) -->
+  <div id="leaderboard">
+    <h3>🏆 LEADERBOARD</h3>
+    <div id="leaderboard-content">
+      <div class="no-players">Waiting for players...</div>
+    </div>
+  </div>
+  
+  <!-- Kill Feed (Right Side) -->
+  <div id="kill-feed"></div>
+  
+  <!-- Match End Screen -->
+  <div id="match-end-screen" style="display: none;">
+    <div class="match-end-content">
+      <h1>MATCH OVER</h1>
+      <div id="winner-display"></div>
+      <div id="final-scores"></div>
+      <button id="restart-btn">NEW MATCH</button>
+    </div>
+  </div>
+  
+  <!-- Camera Mode Indicator -->
+  <div id="camera-mode">
+    <span id="camera-mode-text">OVERVIEW</span>
+  </div>
+  
+  <!-- Scripts -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r160/three.min.js"></script>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  
+  <!-- Three.js Addons loaded via importmap -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r160/three.module.min.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  
+  <script type="module" src="game.js"></script>
+</body>
+</html>

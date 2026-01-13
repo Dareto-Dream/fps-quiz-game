@@ -560,7 +560,7 @@ function applyPlayerInput(data) {
   const now = Date.now();
   if (now - lastInputLogAt > 1000) {
     lastInputLogAt = now;
-    console.debug('[host] input', {
+    console.log('[host] input', {
       playerId: data.playerId,
       moveX: Number((data.moveX || 0).toFixed(2)),
       moveY: Number((data.moveY || 0).toFixed(2)),
@@ -630,28 +630,58 @@ function updateAlivePlayer(player, deltaTime) {
   // Apply rotation to group
   player.group.rotation.y = player.rotation.y;
   
-  // Calculate movement
-  const moveSpeed = CONFIG.MOVE_SPEED * deltaTime;
-  const moveX = player.lastInput.moveX * moveSpeed;
-  const moveZ = player.lastInput.moveY * moveSpeed;
-  
-  // Move relative to player rotation
-  const forward = new THREE.Vector3(0, 0, -1);
-  forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
-  
-  const right = new THREE.Vector3(1, 0, 0);
-  right.applyAxisAngle(new THREE.Vector3(0, 1, 0), player.rotation.y);
-  
-  const newPos = player.position.clone();
-  newPos.add(forward.multiplyScalar(-moveZ));
-  newPos.add(right.multiplyScalar(moveX));
-  
-  // Boundary collision
-  const boundary = CONFIG.ARENA.WIDTH / 2 - 1;
-  newPos.x = Math.max(-boundary, Math.min(boundary, newPos.x));
-  newPos.z = Math.max(-boundary, Math.min(boundary, newPos.z));
-  
-  player.position.copy(newPos);
+  // Calculate movement - only if there's actual input
+  if (Math.abs(player.lastInput.moveX) > 0.001 || Math.abs(player.lastInput.moveY) > 0.001) {
+    if (Math.random() < 0.1) { // Log 10% of movement frames
+      console.log('[host] MOVING player', {
+        id: player.id.substring(0, 8),
+        moveX: player.lastInput.moveX.toFixed(2),
+        moveY: player.lastInput.moveY.toFixed(2),
+        deltaTime: deltaTime.toFixed(3),
+        rotY: player.rotation.y.toFixed(2),
+        posBefore: `${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}`
+      });
+    }
+    
+    const moveSpeed = CONFIG.MOVE_SPEED * deltaTime;
+    
+    // Calculate direction vectors relative to player's rotation
+    const forward = new THREE.Vector3(
+      Math.sin(player.rotation.y),
+      0,
+      Math.cos(player.rotation.y)
+    );
+    
+    const right = new THREE.Vector3(
+      Math.cos(player.rotation.y),
+      0,
+      -Math.sin(player.rotation.y)
+    );
+    
+    // Create movement vector
+    const movement = new THREE.Vector3();
+    movement.addScaledVector(forward, -player.lastInput.moveY * moveSpeed); // Forward/backward
+    movement.addScaledVector(right, player.lastInput.moveX * moveSpeed);     // Left/right
+    
+    console.log('[host] movement vector', {
+      movement: `${movement.x.toFixed(2)}, ${movement.z.toFixed(2)}`,
+      moveSpeed: moveSpeed.toFixed(3)
+    });
+    
+    // Apply movement
+    const newPos = player.position.clone().add(movement);
+    
+    // Boundary collision
+    const boundary = CONFIG.ARENA.WIDTH / 2 - 1;
+    newPos.x = Math.max(-boundary, Math.min(boundary, newPos.x));
+    newPos.z = Math.max(-boundary, Math.min(boundary, newPos.z));
+    
+    player.position.copy(newPos);
+    
+    if (Math.random() < 0.1) { // Log 10% of movement frames
+      console.log('[host] posAfter', `${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)}`);
+    }
+  }
   
   // Handle shooting
   if (player.lastInput.shoot && player.ammo > 0) {
@@ -665,14 +695,6 @@ function updateAlivePlayer(player, deltaTime) {
   // Reset look deltas (they're deltas, not absolute)
   player.lastInput.lookDeltaX = 0;
   player.lastInput.lookDeltaY = 0;
-}
-
-function updateDeadPlayer(player, deltaTime) {
-  player.respawnTimer -= deltaTime;
-  
-  if (player.respawnTimer <= 0) {
-    respawnPlayer(player);
-  }
 }
 
 // ============================================

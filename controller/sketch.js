@@ -859,7 +859,7 @@ function sendInput() {
   const now = performance.now();
   if (now - lastInputLogAt > 1000) {
     lastInputLogAt = now;
-    console.debug('[controller] input', {
+    console.log('[controller] input', {
       moveX: Number(moveX.toFixed(2)),
       moveY: Number(moveY.toFixed(2)),
       lookDeltaX: Number(lookDeltaX.toFixed(3)),

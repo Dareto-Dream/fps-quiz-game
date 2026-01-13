@@ -542,8 +542,8 @@ function respawnPlayer(player) {
   player.spawnProtection = CONFIG.SPAWN_PROTECTION_TIME;
   player.group.visible = true;
   
-  // Notify controller
-  socket.emit('player-respawn', {
+  // Notify controller - use event name that matches client listener
+  socket.emit('player-respawned', {
     playerId: player.id,
     health: player.health,
     ammo: player.ammo
@@ -816,7 +816,7 @@ function handleKill(killer, victim) {
   // Add kill to feed
   addKillFeed(killer.colorName, victim.colorName, killer.color, victim.color);
   
-  // Emit events
+  // Emit events - use event names that match client listeners
   socket.emit('kill-event', {
     killerId: killer.id,
     victimId: victim.id,
@@ -824,8 +824,9 @@ function handleKill(killer, victim) {
     timestamp: Date.now()
   });
   
-  socket.emit('player-death', {
-    victimId: victim.id,
+  // Client expects 'player-died' with 'playerId' field
+  socket.emit('player-died', {
+    playerId: victim.id,
     killerId: killer.id,
     killerName: killer.colorName,
     respawnTime: CONFIG.RESPAWN_TIME
@@ -845,8 +846,8 @@ function handleQuizCompleted(data) {
   const reward = CONFIG.QUIZ_REWARDS[data.correctCount] || 0;
   player.ammo = Math.min(player.ammo + reward, CONFIG.PLAYER_MAX_AMMO);
   
-  // Notify controller
-  socket.emit('ammo-update', {
+  // Notify controller - use event name that matches client listener
+  socket.emit('ammo-updated', {
     playerId: data.playerId,
     ammo: player.ammo,
     ammoGained: reward

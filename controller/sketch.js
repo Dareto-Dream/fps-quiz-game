@@ -54,6 +54,11 @@ let quizAnswers = [];
 let scene, camera, renderer;
 let clock = new THREE.Clock();
 
+// Shooting visual effects
+let lastLocalShootTime = 0;
+let muzzleFlash = null;
+let gunMesh = null;
+
 // Arena config
 const ARENA = { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 };
 
@@ -460,6 +465,18 @@ function initThreeJS() {
   camera.position.set(0, 1.7, 0); // Eye height
   camera.rotation.order = 'YXZ';
   
+  // Create first-person gun mesh (attached to camera)
+  const gunGeometry = new THREE.BoxGeometry(0.08, 0.08, 0.4);
+  const gunMaterial = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  gunMesh = new THREE.Mesh(gunGeometry, gunMaterial);
+  gunMesh.position.set(0.25, -0.15, -0.5); // Offset to bottom-right of view
+  camera.add(gunMesh);
+  
+  // Create muzzle flash light (hidden by default)
+  muzzleFlash = new THREE.PointLight(0xffaa00, 0, 3);
+  muzzleFlash.position.set(0.25, -0.15, -0.7);
+  camera.add(muzzleFlash);
+  
   // Renderer
   const canvas = document.getElementById('game-canvas');
   renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
@@ -473,6 +490,9 @@ function initThreeJS() {
   const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
   directionalLight.position.set(20, 40, 20);
   scene.add(directionalLight);
+  
+  // Add camera to scene (so gun renders)
+  scene.add(camera);
   
   // Create arena
   createArena();
@@ -595,7 +615,20 @@ function handleGameState(data) {
     myKills = myData.kills;
     myDeaths = myData.deaths;
     myStreak = myData.streak;
+    
+    // Check if we just died (were alive, now dead)
+    const wasDead = !isAlive;
     isAlive = myData.alive;
+    
+    // If we're dead and death screen isn't showing, show it
+    if (!isAlive && !wasDead) {
+      document.getElementById('death-screen').style.display = 'flex';
+    }
+    
+    // If we're alive and death screen is showing, hide it
+    if (isAlive && document.getElementById('death-screen').style.display !== 'none') {
+      document.getElementById('death-screen').style.display = 'none';
+    }
     
     updateHUD();
   }
@@ -663,7 +696,14 @@ function updateOtherPlayer(id, data) {
 
 function handleKillEvent(data) {
   if (data.killerId === playerId) {
-    showNotification('kill-notification', 'KILL!', 2000);
+    // Show kill notification with streak info
+    let killText = 'KILL!';
+    if (data.killerStreak >= 3) {
+      killText = `KILL! (${data.killerStreak} STREAK 🔥)`;
+    }
+    showNotification('kill-notification', killText, 2000);
+    
+    // Haptic feedback
     if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
   }
 }
@@ -671,15 +711,24 @@ function handleKillEvent(data) {
 function handlePlayerDied(data) {
   if (data.playerId === playerId) {
     isAlive = false;
-    respawnTimer = data.respawnTime;
+    respawnTimer = data.respawnTime || 3;
     
     document.getElementById('killer-name').textContent = data.killerName || 'Enemy';
     document.getElementById('death-screen').style.display = 'flex';
+    document.getElementById('respawn-countdown').textContent = Math.ceil(respawnTimer);
     
-    const countdown = setInterval(() => {
+    // Clear any existing countdown
+    if (window.respawnInterval) {
+      clearInterval(window.respawnInterval);
+    }
+    
+    window.respawnInterval = setInterval(() => {
       respawnTimer--;
       document.getElementById('respawn-countdown').textContent = Math.max(0, Math.ceil(respawnTimer));
-      if (respawnTimer <= 0) clearInterval(countdown);
+      if (respawnTimer <= 0) {
+        clearInterval(window.respawnInterval);
+        window.respawnInterval = null;
+      }
     }, 1000);
     
     if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
@@ -691,8 +740,17 @@ function handlePlayerRespawned(data) {
     isAlive = true;
     myHealth = data.health;
     myAmmo = data.ammo;
+    
+    // Clear respawn countdown
+    if (window.respawnInterval) {
+      clearInterval(window.respawnInterval);
+      window.respawnInterval = null;
+    }
+    
     document.getElementById('death-screen').style.display = 'none';
     updateHUD();
+    
+    if (navigator.vibrate) navigator.vibrate(100);
   }
 }
 
@@ -736,15 +794,34 @@ function handleHostDisconnected() {
 // UI UPDATES
 // ============================================
 function updateHUD() {
-  // Health bar
+  // Health bar with color based on health level
   const healthPercent = Math.max(0, myHealth) / 100;
-  document.getElementById('health-bar').style.width = `${healthPercent * 100}%`;
+  const healthBar = document.getElementById('health-bar');
+  healthBar.style.width = `${healthPercent * 100}%`;
+  
+  // Change health bar color based on health
+  if (myHealth > 60) {
+    healthBar.style.background = 'linear-gradient(90deg, #44ff44, #66ff66)';
+  } else if (myHealth > 30) {
+    healthBar.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc44)';
+  } else {
+    healthBar.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
+  }
+  
   document.getElementById('health-text').textContent = `HP: ${Math.ceil(myHealth)}`;
   
-  // Ammo
-  document.getElementById('ammo-display').textContent = `⚡ ${myAmmo}`;
+  // Ammo with low ammo warning
+  const ammoDisplay = document.getElementById('ammo-display');
+  ammoDisplay.textContent = `⚡ ${myAmmo}`;
+  if (myAmmo <= 3) {
+    ammoDisplay.style.color = '#ff4444';
+  } else if (myAmmo <= 5) {
+    ammoDisplay.style.color = '#ffaa00';
+  } else {
+    ammoDisplay.style.color = '#ffffff';
+  }
   
-  // Stats
+  // Stats with streak indicator
   document.getElementById('stats-display').innerHTML = 
     `K/D: ${myKills}/${myDeaths}<br>Streak: ${myStreak}${myStreak >= 3 ? ' 🔥' : ''}`;
 }
@@ -891,6 +968,7 @@ function animate() {
   if (!renderer || !scene || !camera) return;
 
   const delta = clock.getDelta();
+  const now = performance.now();
   
   tickMatchTimer();
   
@@ -899,6 +977,33 @@ function animate() {
     camera.rotation.y -= lookDeltaX;
     camera.rotation.x -= lookDeltaY;
     camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+  }
+  
+  // Handle shooting visual effects
+  if (shooting && isAlive && myAmmo > 0) {
+    if (now - lastLocalShootTime > 200) { // Match server fire rate
+      lastLocalShootTime = now;
+      
+      // Show muzzle flash
+      if (muzzleFlash) {
+        muzzleFlash.intensity = 3;
+        setTimeout(() => {
+          if (muzzleFlash) muzzleFlash.intensity = 0;
+        }, 50);
+      }
+      
+      // Gun recoil animation
+      if (gunMesh) {
+        gunMesh.position.z = -0.4; // Kick back
+        gunMesh.rotation.x = -0.1; // Tilt up
+      }
+    }
+  }
+  
+  // Reset gun position smoothly
+  if (gunMesh) {
+    gunMesh.position.z += (-0.5 - gunMesh.position.z) * 0.2;
+    gunMesh.rotation.x += (0 - gunMesh.rotation.x) * 0.2;
   }
   
   // Client-side prediction: move camera locally based on input for smoother feel

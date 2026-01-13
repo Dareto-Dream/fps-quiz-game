@@ -310,6 +310,12 @@ io.on('connection', (socket) => {
     socket.to(socket.roomCode).emit('game-state', data);
   });
   
+  // Host broadcasts full state with positions
+  socket.on('full-state', (data) => {
+    if (!socket.roomCode) return;
+    socket.to(socket.roomCode).emit('full-state', data);
+  });
+  
   // Host broadcasts kill event
   socket.on('kill-event', (data) => {
     if (!socket.roomCode) return;
@@ -323,6 +329,7 @@ io.on('connection', (socket) => {
       victimSocket.emit('player-died', {
         playerId: data.victimId,
         killerId: data.killerId,
+        killerName: data.killerName,
         respawnTime: data.respawnTime
       });
     }

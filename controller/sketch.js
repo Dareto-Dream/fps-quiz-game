@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 // ============================================
 // GAME STATE
 // ============================================
@@ -18,6 +20,14 @@ let isAlive = true;
 let respawnTimer = 0;
 let matchTime = 300;
 
+// Player position/rotation (synced from host)
+let myPosition = new THREE.Vector3(0, 0, 0);
+let myRotationY = 0; // Horizontal rotation
+let myRotationX = 0; // Vertical rotation (pitch)
+
+// Other players
+let otherPlayers = {};
+
 // Input state
 let moveX = 0;
 let moveY = 0;
@@ -26,64 +36,44 @@ let lookDeltaY = 0;
 let shooting = false;
 
 // Joystick state
-let joystickActive = false;
-let joystickStartX = 0;
-let joystickStartY = 0;
-let joystickX = 0;
-let joystickY = 0;
-let joystickTouchId = null;
-
-// Look state
-let lookActive = false;
-let lookStartX = 0;
-let lookStartY = 0;
-let lookTouchId = null;
-
-// Shoot button state
-let shootActive = false;
-let shootTouchId = null;
-
-// UI dimensions
-let shootButtonX, shootButtonY, shootButtonRadius;
-let reloadButtonX, reloadButtonY, reloadButtonW, reloadButtonH;
+let leftJoystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, touchId: null };
+let rightJoystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, touchId: null };
 
 // Quiz state
 let quizActive = false;
 let quizQuestions = [];
 let quizAnswers = [];
 
-// Kill notification
-let killNotification = '';
-let killNotificationTimer = 0;
+// Three.js
+let scene, camera, renderer;
+let clock = new THREE.Clock();
 
-// Ammo notification
-let ammoNotification = '';
-let ammoNotificationTimer = 0;
-
-// p5 instance (created after connection)
-let p5Instance = null;
+// Arena config
+const ARENA = { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 };
 
 // ============================================
-// WAIT FOR DOM TO LOAD
+// INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
-  // Auto-fill server IP from current page hostname
+  // Auto-fill server IP from current hostname
   const currentHost = window.location.hostname;
   if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
     document.getElementById('server-ip').value = currentHost;
   }
   
-  // Auto-fill port from current page port
   const currentPort = window.location.port;
   if (currentPort) {
     document.getElementById('server-port').value = currentPort;
   }
   
-  // Connection button
+  // Event listeners
   document.getElementById('connect-btn').addEventListener('click', connectToServer);
-  
-  // Quiz submit button
   document.getElementById('submit-quiz-btn').addEventListener('click', submitQuiz);
+  document.getElementById('fire-btn').addEventListener('touchstart', (e) => { e.preventDefault(); startFiring(); });
+  document.getElementById('fire-btn').addEventListener('touchend', (e) => { e.preventDefault(); stopFiring(); });
+  document.getElementById('fire-btn').addEventListener('mousedown', startFiring);
+  document.getElementById('fire-btn').addEventListener('mouseup', stopFiring);
+  document.getElementById('reload-btn').addEventListener('click', requestQuiz);
   
   // Enter key on inputs
   document.querySelectorAll('#connection-screen input').forEach(input => {
@@ -91,7 +81,225 @@ document.addEventListener('DOMContentLoaded', function() {
       if (e.key === 'Enter') connectToServer();
     });
   });
+  
+  // Joystick touch events
+  setupJoysticks();
 });
+
+function startFiring() {
+  shooting = true;
+  document.getElementById('fire-btn').classList.add('active');
+}
+
+function stopFiring() {
+  shooting = false;
+  document.getElementById('fire-btn').classList.remove('active');
+}
+
+// ============================================
+// JOYSTICK SETUP
+// ============================================
+function setupJoysticks() {
+  const leftArea = document.getElementById('left-joystick-area');
+  const rightArea = document.getElementById('right-joystick-area');
+  
+  // Touch events for left joystick (movement)
+  leftArea.addEventListener('touchstart', (e) => handleJoystickStart(e, leftJoystick, 'left'), { passive: false });
+  leftArea.addEventListener('touchmove', (e) => handleJoystickMove(e, leftJoystick, 'left'), { passive: false });
+  leftArea.addEventListener('touchend', (e) => handleJoystickEnd(e, leftJoystick, 'left'), { passive: false });
+  leftArea.addEventListener('touchcancel', (e) => handleJoystickEnd(e, leftJoystick, 'left'), { passive: false });
+  
+  // Touch events for right joystick (look)
+  rightArea.addEventListener('touchstart', (e) => handleJoystickStart(e, rightJoystick, 'right'), { passive: false });
+  rightArea.addEventListener('touchmove', (e) => handleJoystickMove(e, rightJoystick, 'right'), { passive: false });
+  rightArea.addEventListener('touchend', (e) => handleJoystickEnd(e, rightJoystick, 'right'), { passive: false });
+  rightArea.addEventListener('touchcancel', (e) => handleJoystickEnd(e, rightJoystick, 'right'), { passive: false });
+  
+  // Mouse events for desktop testing
+  leftArea.addEventListener('mousedown', (e) => handleMouseJoystickStart(e, leftJoystick, 'left'));
+  rightArea.addEventListener('mousedown', (e) => handleMouseJoystickStart(e, rightJoystick, 'right'));
+  document.addEventListener('mousemove', handleMouseJoystickMove);
+  document.addEventListener('mouseup', handleMouseJoystickEnd);
+  
+  // Keyboard for desktop
+  document.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('keyup', handleKeyUp);
+}
+
+function handleJoystickStart(e, joystick, side) {
+  e.preventDefault();
+  const touch = e.changedTouches[0];
+  const rect = e.target.closest('.joystick-area').getBoundingClientRect();
+  
+  joystick.active = true;
+  joystick.touchId = touch.identifier;
+  joystick.startX = rect.left + rect.width / 2;
+  joystick.startY = rect.top + rect.height / 2;
+  joystick.currentX = touch.clientX;
+  joystick.currentY = touch.clientY;
+  
+  updateJoystickVisual(joystick, side);
+}
+
+function handleJoystickMove(e, joystick, side) {
+  e.preventDefault();
+  if (!joystick.active) return;
+  
+  for (let touch of e.changedTouches) {
+    if (touch.identifier === joystick.touchId) {
+      joystick.currentX = touch.clientX;
+      joystick.currentY = touch.clientY;
+      updateJoystickVisual(joystick, side);
+      break;
+    }
+  }
+}
+
+function handleJoystickEnd(e, joystick, side) {
+  e.preventDefault();
+  for (let touch of e.changedTouches) {
+    if (touch.identifier === joystick.touchId) {
+      joystick.active = false;
+      joystick.touchId = null;
+      resetJoystickVisual(side);
+      
+      if (side === 'left') {
+        moveX = 0;
+        moveY = 0;
+      }
+      break;
+    }
+  }
+}
+
+// Mouse support for desktop
+let activeMouseJoystick = null;
+let activeMouseSide = null;
+
+function handleMouseJoystickStart(e, joystick, side) {
+  const rect = e.target.closest('.joystick-area').getBoundingClientRect();
+  
+  joystick.active = true;
+  joystick.startX = rect.left + rect.width / 2;
+  joystick.startY = rect.top + rect.height / 2;
+  joystick.currentX = e.clientX;
+  joystick.currentY = e.clientY;
+  
+  activeMouseJoystick = joystick;
+  activeMouseSide = side;
+  
+  updateJoystickVisual(joystick, side);
+}
+
+function handleMouseJoystickMove(e) {
+  if (!activeMouseJoystick) return;
+  
+  activeMouseJoystick.currentX = e.clientX;
+  activeMouseJoystick.currentY = e.clientY;
+  updateJoystickVisual(activeMouseJoystick, activeMouseSide);
+}
+
+function handleMouseJoystickEnd(e) {
+  if (activeMouseJoystick) {
+    activeMouseJoystick.active = false;
+    resetJoystickVisual(activeMouseSide);
+    
+    if (activeMouseSide === 'left') {
+      moveX = 0;
+      moveY = 0;
+    }
+    
+    activeMouseJoystick = null;
+    activeMouseSide = null;
+  }
+}
+
+function updateJoystickVisual(joystick, side) {
+  const handle = document.getElementById(side === 'left' ? 'left-handle' : 'right-handle');
+  const maxDist = 40;
+  
+  const dx = joystick.currentX - joystick.startX;
+  const dy = joystick.currentY - joystick.startY;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  
+  let clampedX = dx;
+  let clampedY = dy;
+  
+  if (dist > maxDist) {
+    clampedX = (dx / dist) * maxDist;
+    clampedY = (dy / dist) * maxDist;
+  }
+  
+  handle.style.transform = `translate(calc(-50% + ${clampedX}px), calc(-50% + ${clampedY}px))`;
+  
+  // Update input values
+  const normalizedX = clampedX / maxDist;
+  const normalizedY = clampedY / maxDist;
+  
+  if (side === 'left') {
+    moveX = normalizedX;
+    moveY = normalizedY;
+  } else {
+    // Right joystick controls look - accumulate rotation
+    lookDeltaX = normalizedX * 0.05;
+    lookDeltaY = normalizedY * 0.03;
+  }
+}
+
+function resetJoystickVisual(side) {
+  const handle = document.getElementById(side === 'left' ? 'left-handle' : 'right-handle');
+  handle.style.transform = 'translate(-50%, -50%)';
+  
+  if (side === 'right') {
+    lookDeltaX = 0;
+    lookDeltaY = 0;
+  }
+}
+
+// Keyboard support
+const keysPressed = {};
+
+function handleKeyDown(e) {
+  keysPressed[e.key.toLowerCase()] = true;
+  
+  if (e.key === ' ' || e.key === 'f') {
+    startFiring();
+  }
+  if (e.key === 'r') {
+    requestQuiz();
+  }
+  
+  updateKeyboardInput();
+}
+
+function handleKeyUp(e) {
+  keysPressed[e.key.toLowerCase()] = false;
+  
+  if (e.key === ' ' || e.key === 'f') {
+    stopFiring();
+  }
+  
+  updateKeyboardInput();
+}
+
+function updateKeyboardInput() {
+  moveX = 0;
+  moveY = 0;
+  
+  if (keysPressed['w']) moveY = -1;
+  if (keysPressed['s']) moveY = 1;
+  if (keysPressed['a']) moveX = -1;
+  if (keysPressed['d']) moveX = 1;
+  
+  // Arrow keys for look
+  if (keysPressed['arrowleft']) lookDeltaX = -0.03;
+  else if (keysPressed['arrowright']) lookDeltaX = 0.03;
+  else if (!rightJoystick.active) lookDeltaX = 0;
+  
+  if (keysPressed['arrowup']) lookDeltaY = -0.02;
+  else if (keysPressed['arrowdown']) lookDeltaY = 0.02;
+  else if (!rightJoystick.active) lookDeltaY = 0;
+}
 
 // ============================================
 // CONNECTION
@@ -113,28 +321,22 @@ function connectToServer() {
   
   document.getElementById('connect-btn').disabled = true;
   document.getElementById('connect-btn').textContent = 'CONNECTING...';
-  showConnectionError(''); // Clear previous errors
+  showConnectionError('');
   
   const serverUrl = `http://${serverIP}:${serverPort}`;
-  console.log('Attempting to connect to:', serverUrl);
   
-  // Close existing socket if any
-  if (socket) {
-    socket.disconnect();
-  }
+  if (socket) socket.disconnect();
   
   socket = io(serverUrl, {
-    transports: ['polling', 'websocket'], // Try polling first, more reliable
-    reconnection: false, // Disable auto-reconnect for initial connection
+    transports: ['polling', 'websocket'],
+    reconnection: false,
     timeout: 15000,
     forceNew: true
   });
   
-  // Connection timeout
   const connectionTimeout = setTimeout(() => {
     if (!connected) {
-      console.log('Connection timeout');
-      showConnectionError('Connection timed out. Make sure you are on the same network as the host.');
+      showConnectionError('Connection timed out.');
       document.getElementById('connect-btn').disabled = false;
       document.getElementById('connect-btn').textContent = 'CONNECT';
       socket.disconnect();
@@ -142,7 +344,6 @@ function connectToServer() {
   }, 15000);
   
   socket.on('connect', () => {
-    console.log('Socket connected, joining room:', code);
     socket.emit('join-room', { roomCode: code });
   });
   
@@ -154,24 +355,27 @@ function connectToServer() {
     playerColorName = data.colorName;
     roomCode = data.roomCode;
     
-    console.log('Successfully joined room as:', playerColorName);
-    
-    // Enable reconnection now that we're connected
     socket.io.opts.reconnection = true;
     
     document.getElementById('connection-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
     
-    // NOW initialize p5.js
-    initP5();
+    // Update player indicator
+    document.getElementById('player-name').textContent = playerColorName;
+    document.getElementById('player-color').style.backgroundColor = playerColor;
+    
+    // Initialize Three.js
+    initThreeJS();
+    
+    // Start game loop
+    animate();
     
     // Start sending input
-    setInterval(sendInput, 33); // 30Hz
+    setInterval(sendInput, 33);
   });
   
   socket.on('join-error', (data) => {
     clearTimeout(connectionTimeout);
-    console.log('Join error:', data.message);
     showConnectionError(data.message);
     document.getElementById('connect-btn').disabled = false;
     document.getElementById('connect-btn').textContent = 'CONNECT';
@@ -179,13 +383,14 @@ function connectToServer() {
   
   socket.on('connect_error', (error) => {
     clearTimeout(connectionTimeout);
-    console.log('Connection error:', error.message);
     showConnectionError(`Connection failed: ${error.message || 'Cannot reach server'}`);
     document.getElementById('connect-btn').disabled = false;
     document.getElementById('connect-btn').textContent = 'CONNECT';
   });
   
+  // Game events
   socket.on('game-state', handleGameState);
+  socket.on('full-state', handleFullState);
   socket.on('kill-event', handleKillEvent);
   socket.on('player-died', handlePlayerDied);
   socket.on('player-respawned', handlePlayerRespawned);
@@ -194,14 +399,6 @@ function connectToServer() {
   socket.on('match-timer', handleMatchTimer);
   socket.on('match-end', handleMatchEnd);
   socket.on('host-disconnected', handleHostDisconnected);
-  
-  socket.on('disconnect', (reason) => {
-    console.log('Disconnected:', reason);
-    if (connected) {
-      // Only show error if we were previously connected
-      showConnectionError('Disconnected from server: ' + reason);
-    }
-  });
 }
 
 function showConnectionError(message) {
@@ -209,241 +406,143 @@ function showConnectionError(message) {
 }
 
 // ============================================
-// INITIALIZE P5.JS (after connection)
+// THREE.JS INITIALIZATION
 // ============================================
-function initP5() {
-  p5Instance = new p5(function(p) {
-    
-    p.setup = function() {
-      const canvas = p.createCanvas(p.windowWidth, p.windowHeight);
-      canvas.parent('game-canvas');
-      calculateUIPositions(p);
-    };
-    
-    p.windowResized = function() {
-      p.resizeCanvas(p.windowWidth, p.windowHeight);
-      calculateUIPositions(p);
-    };
-    
-    p.draw = function() {
-      if (!connected) return;
-      
-      p.background(20, 20, 35);
-      
-      // Draw HUD
-      drawHealthBar(p);
-      drawAmmoCounter(p);
-      drawStats(p);
-      drawMatchTimer(p);
-      drawJoystick(p);
-      drawShootButton(p);
-      drawReloadButton(p);
-      drawNotifications(p);
-      drawPlayerInfo(p);
-    };
-    
-    p.touchStarted = function(event) {
-      // Only handle touches on the canvas
-      if (event.target.tagName === 'CANVAS') {
-        for (let t of p.touches) {
-          handleTouchStart(t, p);
-        }
-        return false;
-      }
-      return true;
-    };
-    
-    p.touchMoved = function(event) {
-      if (event.target.tagName === 'CANVAS') {
-        for (let t of p.touches) {
-          handleTouchMove(t, p);
-        }
-        return false;
-      }
-      return true;
-    };
-    
-    p.touchEnded = function(event) {
-      // Check which touches ended
-      const activeTouchIds = p.touches.map(t => t.id);
-      
-      if (joystickTouchId !== null && !activeTouchIds.includes(joystickTouchId)) {
-        joystickActive = false;
-        joystickTouchId = null;
-        moveX = 0;
-        moveY = 0;
-      }
-      
-      if (lookTouchId !== null && !activeTouchIds.includes(lookTouchId)) {
-        lookActive = false;
-        lookTouchId = null;
-      }
-      
-      if (shootTouchId !== null && !activeTouchIds.includes(shootTouchId)) {
-        shootActive = false;
-        shootTouchId = null;
-        shooting = false;
-      }
-      
-      return false;
-    };
-    
-    // Mouse support for desktop testing
-    p.mousePressed = function(event) {
-      if (event.target.tagName !== 'CANVAS') return true;
-      
-      const x = p.mouseX;
-      const y = p.mouseY;
-      
-      // Check shoot button
-      const shootDist = p.dist(x, y, shootButtonX, shootButtonY);
-      if (shootDist < shootButtonRadius) {
-        shootActive = true;
-        shooting = true;
-        return false;
-      }
-      
-      // Check reload button
-      if (x > reloadButtonX && x < reloadButtonX + reloadButtonW &&
-          y > reloadButtonY && y < reloadButtonY + reloadButtonH) {
-        requestQuiz();
-        return false;
-      }
-      
-      // Left side for joystick
-      if (x < p.width * 0.5) {
-        joystickActive = true;
-        joystickStartX = x;
-        joystickStartY = y;
-        joystickX = x;
-        joystickY = y;
-        return false;
-      }
-      
-      // Right side for look
-      if (x >= p.width * 0.5 && shootDist >= shootButtonRadius) {
-        lookActive = true;
-        lookStartX = x;
-        lookStartY = y;
-        return false;
-      }
-      
-      return false;
-    };
-    
-    p.mouseDragged = function(event) {
-      if (event.target.tagName !== 'CANVAS') return true;
-      
-      const x = p.mouseX;
-      const y = p.mouseY;
-      
-      // Joystick movement
-      if (joystickActive) {
-        joystickX = x;
-        joystickY = y;
-        
-        const maxDist = 60;
-        const dx = joystickX - joystickStartX;
-        const dy = joystickY - joystickStartY;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        if (dist > 0) {
-          const clampedDist = Math.min(dist, maxDist);
-          moveX = (dx / dist) * (clampedDist / maxDist);
-          moveY = (dy / dist) * (clampedDist / maxDist);
-        }
-      }
-      
-      // Look movement
-      if (lookActive) {
-        const dx = x - lookStartX;
-        const dy = y - lookStartY;
-        
-        lookDeltaX = dx * 0.01;
-        lookDeltaY = dy * 0.01;
-        
-        lookStartX = x;
-        lookStartY = y;
-      }
-      
-      return false;
-    };
-    
-    p.mouseReleased = function(event) {
-      joystickActive = false;
-      moveX = 0;
-      moveY = 0;
-      
-      lookActive = false;
-      
-      shootActive = false;
-      shooting = false;
-      
-      return false;
-    };
-    
-    // Keyboard support for desktop testing
-    p.keyPressed = function() {
-      if (p.key === ' ' || p.key === 'f' || p.key === 'F') {
-        shootActive = true;
-        shooting = true;
-      }
-      if (p.key === 'r' || p.key === 'R') {
-        requestQuiz();
-      }
-      updateKeyboardMovement(p);
-      return false;
-    };
-    
-    p.keyReleased = function() {
-      if (p.key === ' ' || p.key === 'f' || p.key === 'F') {
-        shootActive = false;
-        shooting = false;
-      }
-      updateKeyboardMovement(p);
-      return false;
-    };
-    
-  }, 'game-canvas');
+function initThreeJS() {
+  // Scene
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x1a1a2e);
+  scene.fog = new THREE.Fog(0x1a1a2e, 20, 60);
+  
+  // Camera (first person)
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 1.7, 0); // Eye height
+  camera.rotation.order = 'YXZ';
+  
+  // Renderer
+  const canvas = document.getElementById('game-canvas');
+  renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  
+  // Lighting
+  const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+  scene.add(ambientLight);
+  
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.position.set(20, 40, 20);
+  scene.add(directionalLight);
+  
+  // Create arena
+  createArena();
+  
+  // Handle resize
+  window.addEventListener('resize', onWindowResize);
 }
 
-// Track pressed keys for smooth movement
-const keysPressed = {};
-
-function updateKeyboardMovement(p) {
-  keysPressed[p.key.toLowerCase()] = p.keyIsPressed && (p.key.toLowerCase() === 'w' || p.key.toLowerCase() === 'a' || p.key.toLowerCase() === 's' || p.key.toLowerCase() === 'd');
+function createArena() {
+  const { WIDTH, DEPTH, WALL_HEIGHT } = ARENA;
   
-  // Calculate movement from WASD
-  let kbMoveX = 0;
-  let kbMoveY = 0;
+  // Floor
+  const floorGeometry = new THREE.PlaneGeometry(WIDTH, DEPTH);
+  const floorMaterial = new THREE.MeshStandardMaterial({ 
+    color: 0x2a2a4a,
+    roughness: 0.8
+  });
+  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+  floor.rotation.x = -Math.PI / 2;
+  scene.add(floor);
   
-  if (p.keyIsDown(87) || p.keyIsDown(119)) kbMoveY = -1; // W
-  if (p.keyIsDown(83) || p.keyIsDown(115)) kbMoveY = 1;  // S
-  if (p.keyIsDown(65) || p.keyIsDown(97)) kbMoveX = -1;  // A
-  if (p.keyIsDown(68) || p.keyIsDown(100)) kbMoveX = 1;  // D
+  // Grid
+  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0x444466, 0x333355);
+  gridHelper.position.y = 0.01;
+  scene.add(gridHelper);
   
-  // Only use keyboard if joystick not active
-  if (!joystickActive) {
-    moveX = kbMoveX;
-    moveY = kbMoveY;
-  }
+  // Wall material
+  const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x3a3a5a });
+  
+  // Walls
+  const wallThickness = 1;
+  
+  // North wall
+  const northWall = new THREE.Mesh(
+    new THREE.BoxGeometry(WIDTH + wallThickness * 2, WALL_HEIGHT, wallThickness),
+    wallMaterial
+  );
+  northWall.position.set(0, WALL_HEIGHT / 2, -DEPTH / 2 - wallThickness / 2);
+  scene.add(northWall);
+  
+  // South wall
+  const southWall = northWall.clone();
+  southWall.position.z = DEPTH / 2 + wallThickness / 2;
+  scene.add(southWall);
+  
+  // East wall
+  const eastWall = new THREE.Mesh(
+    new THREE.BoxGeometry(wallThickness, WALL_HEIGHT, DEPTH),
+    wallMaterial
+  );
+  eastWall.position.set(WIDTH / 2 + wallThickness / 2, WALL_HEIGHT / 2, 0);
+  scene.add(eastWall);
+  
+  // West wall
+  const westWall = eastWall.clone();
+  westWall.position.x = -WIDTH / 2 - wallThickness / 2;
+  scene.add(westWall);
+  
+  // Obstacles
+  const obstacleMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a6a });
+  
+  // Center pillar
+  const centerPillar = new THREE.Mesh(
+    new THREE.BoxGeometry(4, 6, 4),
+    obstacleMaterial
+  );
+  centerPillar.position.set(0, 3, 0);
+  scene.add(centerPillar);
+  
+  // Corner crates
+  const cratePositions = [
+    { x: -15, z: -15 }, { x: 15, z: -15 },
+    { x: -15, z: 15 }, { x: 15, z: 15 }
+  ];
+  
+  cratePositions.forEach(pos => {
+    const crate = new THREE.Mesh(
+      new THREE.BoxGeometry(3, 3, 3),
+      obstacleMaterial
+    );
+    crate.position.set(pos.x, 1.5, pos.z);
+    scene.add(crate);
+  });
+  
+  // Barriers
+  const barrierPositions = [
+    { x: -10, z: 0, rotY: 0 },
+    { x: 10, z: 0, rotY: 0 },
+    { x: 0, z: -10, rotY: Math.PI / 2 },
+    { x: 0, z: 10, rotY: Math.PI / 2 }
+  ];
+  
+  barrierPositions.forEach(pos => {
+    const barrier = new THREE.Mesh(
+      new THREE.BoxGeometry(6, 2, 1),
+      obstacleMaterial
+    );
+    barrier.position.set(pos.x, 1, pos.z);
+    barrier.rotation.y = pos.rotY;
+    scene.add(barrier);
+  });
 }
 
-function calculateUIPositions(p) {
-  // Shoot button - right side, lower area
-  shootButtonRadius = Math.min(p.width, p.height) * 0.12;
-  shootButtonX = p.width * 0.8;
-  shootButtonY = p.height * 0.7;
-  
-  // Reload button - above shoot button
-  reloadButtonW = shootButtonRadius * 1.5;
-  reloadButtonH = shootButtonRadius * 0.6;
-  reloadButtonX = shootButtonX - reloadButtonW / 2;
-  reloadButtonY = shootButtonY - shootButtonRadius - reloadButtonH - 20;
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
 // ============================================
-// SOCKET HANDLERS
+// GAME STATE HANDLERS
 // ============================================
 function handleGameState(data) {
   if (data.players && data.players[playerId]) {
@@ -454,22 +553,74 @@ function handleGameState(data) {
     myDeaths = myData.deaths;
     myStreak = myData.streak;
     isAlive = myData.alive;
+    
+    updateHUD();
   }
   if (data.matchTime !== undefined) {
     matchTime = data.matchTime;
+    updateTimer();
   }
+}
+
+function handleFullState(data) {
+  // Update my position/rotation from host
+  if (data.players && data.players[playerId]) {
+    const myData = data.players[playerId];
+    myPosition.set(myData.x, myData.y, myData.z);
+    myRotationY = myData.rotY;
+    myRotationX = myData.rotX;
+    
+    // Update camera
+    camera.position.set(myData.x, myData.y + 1.7, myData.z);
+    camera.rotation.y = myRotationY;
+    camera.rotation.x = myRotationX;
+  }
+  
+  // Update other players
+  if (data.players) {
+    for (const [id, playerData] of Object.entries(data.players)) {
+      if (id !== playerId) {
+        updateOtherPlayer(id, playerData);
+      }
+    }
+    
+    // Remove disconnected players
+    for (const id of Object.keys(otherPlayers)) {
+      if (!data.players[id]) {
+        scene.remove(otherPlayers[id].mesh);
+        delete otherPlayers[id];
+      }
+    }
+  }
+}
+
+function updateOtherPlayer(id, data) {
+  if (!otherPlayers[id]) {
+    // Create new player mesh
+    const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.6, 8);
+    const material = new THREE.MeshStandardMaterial({ color: data.color || 0xff0000 });
+    const mesh = new THREE.Mesh(geometry, material);
+    
+    // Add head
+    const headGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+    const head = new THREE.Mesh(headGeometry, material);
+    head.position.y = 1.1;
+    mesh.add(head);
+    
+    scene.add(mesh);
+    otherPlayers[id] = { mesh: mesh, color: data.color };
+  }
+  
+  const player = otherPlayers[id];
+  player.mesh.position.set(data.x, data.y + 0.8, data.z);
+  player.mesh.rotation.y = data.rotY;
+  player.mesh.visible = data.alive;
 }
 
 function handleKillEvent(data) {
   if (data.killerId === playerId) {
-    // I got a kill!
-    killNotification = 'KILL!';
-    killNotificationTimer = 2;
-    
-    // Vibrate if supported
-    if (navigator.vibrate) {
-      navigator.vibrate([100, 50, 100]);
-    }
+    showNotification('kill-notification', 'KILL!', 2000);
+    if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
   }
 }
 
@@ -478,23 +629,16 @@ function handlePlayerDied(data) {
     isAlive = false;
     respawnTimer = data.respawnTime;
     
-    // Show death screen
-    document.getElementById('killer-name').textContent = data.killerId.substring(0, 8);
+    document.getElementById('killer-name').textContent = data.killerName || 'Enemy';
     document.getElementById('death-screen').style.display = 'flex';
     
-    // Countdown
     const countdown = setInterval(() => {
       respawnTimer--;
       document.getElementById('respawn-countdown').textContent = Math.max(0, Math.ceil(respawnTimer));
-      if (respawnTimer <= 0) {
-        clearInterval(countdown);
-      }
+      if (respawnTimer <= 0) clearInterval(countdown);
     }, 1000);
     
-    // Vibrate
-    if (navigator.vibrate) {
-      navigator.vibrate([200, 100, 200, 100, 200]);
-    }
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
   }
 }
 
@@ -504,6 +648,7 @@ function handlePlayerRespawned(data) {
     myHealth = data.health;
     myAmmo = data.ammo;
     document.getElementById('death-screen').style.display = 'none';
+    updateHUD();
   }
 }
 
@@ -517,12 +662,13 @@ function handleQuizQuestions(data) {
 
 function handleAmmoUpdated(data) {
   myAmmo = data.ammo;
-  ammoNotification = `+${data.ammoGained} AMMO`;
-  ammoNotificationTimer = 2;
+  showNotification('ammo-notification', `+${data.ammoGained} AMMO`, 2000);
+  updateHUD();
 }
 
 function handleMatchTimer(data) {
   matchTime = data.timeRemaining;
+  updateTimer();
 }
 
 function handleMatchEnd(data) {
@@ -530,9 +676,7 @@ function handleMatchEnd(data) {
   
   if (data.winner) {
     document.getElementById('winner-info').innerHTML = 
-      `🏆 Winner: <strong style="color: ${data.winner.id === playerId ? playerColor : 'white'}">${data.winner.colorName}</strong> with ${data.winner.kills} kills`;
-  } else {
-    document.getElementById('winner-info').textContent = 'No winner';
+      `🏆 Winner: <strong>${data.winner.colorName}</strong> with ${data.winner.kills} kills`;
   }
   
   document.getElementById('your-final-stats').textContent = 
@@ -545,7 +689,39 @@ function handleHostDisconnected() {
 }
 
 // ============================================
-// QUIZ SYSTEM
+// UI UPDATES
+// ============================================
+function updateHUD() {
+  // Health bar
+  const healthPercent = Math.max(0, myHealth) / 100;
+  document.getElementById('health-bar').style.width = `${healthPercent * 100}%`;
+  document.getElementById('health-text').textContent = `HP: ${Math.ceil(myHealth)}`;
+  
+  // Ammo
+  document.getElementById('ammo-display').textContent = `⚡ ${myAmmo}`;
+  
+  // Stats
+  document.getElementById('stats-display').innerHTML = 
+    `K/D: ${myKills}/${myDeaths}<br>Streak: ${myStreak}${myStreak >= 3 ? ' 🔥' : ''}`;
+}
+
+function updateTimer() {
+  const minutes = Math.floor(matchTime / 60);
+  const seconds = Math.floor(matchTime % 60);
+  document.getElementById('timer-display').textContent = 
+    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  document.getElementById('timer-display').style.color = matchTime <= 30 ? '#ff4444' : '#ff6600';
+}
+
+function showNotification(elementId, text, duration) {
+  const el = document.getElementById(elementId);
+  el.textContent = text;
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, duration);
+}
+
+// ============================================
+// QUIZ
 // ============================================
 function renderQuiz() {
   const container = document.getElementById('quiz-questions');
@@ -576,15 +752,11 @@ function renderQuiz() {
 function selectQuizOption(questionIndex, optionIndex) {
   quizAnswers[questionIndex] = optionIndex;
   
-  // Update UI
   for (let i = 0; i < 4; i++) {
     const btn = document.getElementById(`quiz-opt-${questionIndex}-${i}`);
-    if (btn) {
-      btn.classList.toggle('selected', i === optionIndex);
-    }
+    if (btn) btn.classList.toggle('selected', i === optionIndex);
   }
   
-  // Enable submit if all answered
   const allAnswered = quizAnswers.every(a => a !== -1);
   document.getElementById('submit-quiz-btn').disabled = !allAnswered;
 }
@@ -592,21 +764,13 @@ function selectQuizOption(questionIndex, optionIndex) {
 function submitQuiz() {
   if (!quizActive) return;
   
-  // Calculate correct answers
   let correctCount = 0;
   quizQuestions.forEach((q, i) => {
-    if (quizAnswers[i] === q.correct) {
-      correctCount++;
-    }
+    if (quizAnswers[i] === q.correct) correctCount++;
   });
   
-  // Send to server
-  socket.emit('submit-quiz', {
-    answers: quizAnswers,
-    correctCount: correctCount
-  });
+  socket.emit('submit-quiz', { answers: quizAnswers, correctCount: correctCount });
   
-  // Close quiz
   quizActive = false;
   document.getElementById('quiz-modal').style.display = 'none';
 }
@@ -618,84 +782,7 @@ function requestQuiz() {
 }
 
 // ============================================
-// INPUT HANDLING
-// ============================================
-function handleTouchStart(t, p) {
-  const x = t.x;
-  const y = t.y;
-  
-  // Check shoot button
-  const shootDist = p.dist(x, y, shootButtonX, shootButtonY);
-  if (shootDist < shootButtonRadius && shootTouchId === null) {
-    shootActive = true;
-    shootTouchId = t.id;
-    shooting = true;
-    return;
-  }
-  
-  // Check reload button
-  if (x > reloadButtonX && x < reloadButtonX + reloadButtonW &&
-      y > reloadButtonY && y < reloadButtonY + reloadButtonH) {
-    requestQuiz();
-    return;
-  }
-  
-  // Check left side for joystick (floating)
-  if (x < p.width * 0.5 && joystickTouchId === null) {
-    joystickActive = true;
-    joystickTouchId = t.id;
-    joystickStartX = x;
-    joystickStartY = y;
-    joystickX = x;
-    joystickY = y;
-    return;
-  }
-  
-  // Right side for look
-  if (x >= p.width * 0.5 && lookTouchId === null && shootDist >= shootButtonRadius) {
-    lookActive = true;
-    lookTouchId = t.id;
-    lookStartX = x;
-    lookStartY = y;
-    return;
-  }
-}
-
-function handleTouchMove(t, p) {
-  // Joystick movement
-  if (t.id === joystickTouchId && joystickActive) {
-    joystickX = t.x;
-    joystickY = t.y;
-    
-    // Calculate normalized direction
-    const maxDist = 60;
-    const dx = joystickX - joystickStartX;
-    const dy = joystickY - joystickStartY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    
-    if (dist > 0) {
-      const clampedDist = Math.min(dist, maxDist);
-      moveX = (dx / dist) * (clampedDist / maxDist);
-      moveY = (dy / dist) * (clampedDist / maxDist);
-    }
-  }
-  
-  // Look movement
-  if (t.id === lookTouchId && lookActive) {
-    const dx = t.x - lookStartX;
-    const dy = t.y - lookStartY;
-    
-    lookDeltaX = dx * 0.01;
-    lookDeltaY = dy * 0.01;
-    
-    // Reset start position for continuous rotation
-    lookStartX = t.x;
-    lookStartY = t.y;
-  }
-}
-
-// ============================================
-// SEND INPUT TO SERVER
+// INPUT SENDING
 // ============================================
 function sendInput() {
   if (!socket || !connected) return;
@@ -710,197 +797,22 @@ function sendInput() {
     jump: false,
     timestamp: Date.now()
   });
-  
-  // Reset look deltas (they're deltas, not absolute)
-  lookDeltaX = 0;
-  lookDeltaY = 0;
 }
 
 // ============================================
-// DRAW FUNCTIONS
+// RENDER LOOP
 // ============================================
-function drawHealthBar(p) {
-  // Health bar background
-  p.fill(60, 60, 80);
-  p.noStroke();
-  p.rect(15, 15, 200, 25, 5);
+function animate() {
+  requestAnimationFrame(animate);
   
-  // Health bar fill
-  const healthPercent = myHealth / 100;
-  const healthColor = p.lerpColor(p.color(255, 50, 50), p.color(50, 255, 50), healthPercent);
-  p.fill(healthColor);
-  p.rect(15, 15, 200 * healthPercent, 25, 5);
+  if (!renderer || !scene || !camera) return;
   
-  // Health text
-  p.fill(255);
-  p.textSize(16);
-  p.textAlign(p.LEFT, p.CENTER);
-  p.text(`HP: ${Math.ceil(myHealth)}`, 25, 27);
-}
-
-function drawAmmoCounter(p) {
-  p.fill(255);
-  p.textSize(24);
-  p.textAlign(p.LEFT, p.TOP);
-  p.text(`⚡ ${myAmmo}`, 15, 50);
-  
-  // Low ammo warning
-  if (myAmmo <= 5 && myAmmo > 0) {
-    p.fill(255, 200, 0);
-    p.textSize(14);
-    p.text('LOW AMMO', 15, 80);
-  } else if (myAmmo === 0) {
-    p.fill(255, 50, 50);
-    p.textSize(14);
-    p.text('NO AMMO - TAP RELOAD', 15, 80);
-  }
-}
-
-function drawStats(p) {
-  p.fill(255);
-  p.textSize(20);
-  p.textAlign(p.RIGHT, p.BOTTOM);
-  p.text(`K/D: ${myKills}/${myDeaths}`, p.width - 15, p.height - 50);
-  
-  if (myStreak >= 3) {
-    p.fill(255, 150, 0);
-    p.text(`🔥 STREAK: ${myStreak}`, p.width - 15, p.height - 20);
-  } else {
-    p.fill(150);
-    p.text(`Streak: ${myStreak}`, p.width - 15, p.height - 20);
-  }
-}
-
-function drawMatchTimer(p) {
-  const minutes = Math.floor(matchTime / 60);
-  const seconds = Math.floor(matchTime % 60);
-  const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  
-  p.fill(matchTime <= 30 ? p.color(255, 50, 50) : p.color(255, 150, 0));
-  p.textSize(28);
-  p.textAlign(p.CENTER, p.TOP);
-  p.text(timeStr, p.width / 2, 15);
-}
-
-function drawJoystick(p) {
-  if (joystickActive) {
-    // Joystick base
-    p.fill(255, 255, 255, 30);
-    p.stroke(255, 255, 255, 100);
-    p.strokeWeight(2);
-    p.ellipse(joystickStartX, joystickStartY, 120, 120);
-    
-    // Joystick handle
-    const maxDist = 60;
-    let handleX = joystickX;
-    let handleY = joystickY;
-    
-    const dx = handleX - joystickStartX;
-    const dy = handleY - joystickStartY;
-    const d = Math.sqrt(dx * dx + dy * dy);
-    
-    if (d > maxDist) {
-      handleX = joystickStartX + (dx / d) * maxDist;
-      handleY = joystickStartY + (dy / d) * maxDist;
-    }
-    
-    p.fill(255, 255, 255, 150);
-    p.noStroke();
-    p.ellipse(handleX, handleY, 50, 50);
-  } else {
-    // Hint text - different for touch vs desktop
-    p.fill(100);
-    p.textSize(14);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.noStroke();
-    
-    // Check if likely mobile (touch support)
-    const isMobile = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
-    
-    if (isMobile) {
-      p.text('TOUCH TO MOVE', p.width * 0.25, p.height * 0.7);
-    } else {
-      p.text('WASD or DRAG TO MOVE', p.width * 0.25, p.height * 0.65);
-      p.text('SPACE/F = Fire, R = Reload', p.width * 0.25, p.height * 0.72);
-      p.text('Drag right side to look', p.width * 0.25, p.height * 0.79);
-    }
-  }
-}
-
-function drawShootButton(p) {
-  // Shoot button
-  if (shootActive) {
-    p.fill(255, 80, 80);
-  } else if (myAmmo > 0) {
-    p.fill(200, 50, 50);
-  } else {
-    p.fill(80, 80, 80);
+  // Apply look rotation locally for responsive feel
+  if (lookDeltaX !== 0 || lookDeltaY !== 0) {
+    camera.rotation.y -= lookDeltaX;
+    camera.rotation.x -= lookDeltaY;
+    camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
   }
   
-  p.stroke(255, 100, 100);
-  p.strokeWeight(3);
-  p.ellipse(shootButtonX, shootButtonY, shootButtonRadius * 2);
-  
-  // Shoot text
-  p.fill(255);
-  p.noStroke();
-  p.textSize(22);
-  p.textAlign(p.CENTER, p.CENTER);
-  p.text('FIRE', shootButtonX, shootButtonY);
-}
-
-function drawReloadButton(p) {
-  // Reload button
-  if (myAmmo < 30) {
-    p.fill(50, 150, 50);
-  } else {
-    p.fill(50, 80, 50);
-  }
-  
-  p.stroke(100, 200, 100);
-  p.strokeWeight(2);
-  p.rect(reloadButtonX, reloadButtonY, reloadButtonW, reloadButtonH, 8);
-  
-  // Reload text
-  p.fill(255);
-  p.noStroke();
-  p.textSize(16);
-  p.textAlign(p.CENTER, p.CENTER);
-  p.text('RELOAD', reloadButtonX + reloadButtonW / 2, reloadButtonY + reloadButtonH / 2);
-}
-
-function drawNotifications(p) {
-  // Kill notification
-  if (killNotificationTimer > 0) {
-    const alpha = killNotificationTimer * 127;
-    p.fill(255, 255, 0, alpha);
-    p.textSize(48);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.noStroke();
-    p.text(killNotification, p.width / 2, p.height / 3);
-    killNotificationTimer -= p.deltaTime / 1000;
-  }
-  
-  // Ammo notification
-  if (ammoNotificationTimer > 0) {
-    const alpha = ammoNotificationTimer * 127;
-    p.fill(0, 255, 100, alpha);
-    p.textSize(32);
-    p.textAlign(p.CENTER, p.CENTER);
-    p.noStroke();
-    p.text(ammoNotification, p.width / 2, p.height / 2);
-    ammoNotificationTimer -= p.deltaTime / 1000;
-  }
-}
-
-function drawPlayerInfo(p) {
-  // Player color indicator
-  p.fill(playerColor);
-  p.noStroke();
-  p.ellipse(p.width - 30, 30, 30, 30);
-  
-  p.fill(255);
-  p.textSize(14);
-  p.textAlign(p.RIGHT, p.CENTER);
-  p.text(playerColorName, p.width - 50, 30);
+  renderer.render(scene, camera);
 }

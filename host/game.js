@@ -793,6 +793,7 @@ function handleKill(killer, victim) {
   socket.emit('player-death', {
     victimId: victim.id,
     killerId: killer.id,
+    killerName: killer.colorName,
     respawnTime: CONFIG.RESPAWN_TIME
   });
   
@@ -977,6 +978,27 @@ function broadcastGameState() {
   
   socket.emit('game-state', state);
   socket.emit('match-timer', { timeRemaining: matchTimer });
+  
+  // Full state with positions for controller 3D rendering
+  const fullState = {
+    players: {},
+    timestamp: now
+  };
+  
+  Object.values(players).forEach(p => {
+    fullState.players[p.id] = {
+      x: p.position.x,
+      y: p.position.y,
+      z: p.position.z,
+      rotY: p.rotation.y,
+      rotX: p.rotation.x,
+      color: p.color,
+      colorName: p.colorName,
+      alive: p.alive
+    };
+  });
+  
+  socket.emit('full-state', fullState);
 }
 
 // ============================================

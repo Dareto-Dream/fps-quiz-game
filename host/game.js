@@ -31,6 +31,7 @@ const CONFIG = {
 let scene, camera, renderer, labelRenderer;
 let socket;
 let players = {};
+let lastInputLogAt = 0;
 let streakLeader = null;
 let matchTimer = CONFIG.MATCH_DURATION;
 let matchActive = false;
@@ -555,6 +556,19 @@ function respawnPlayer(player) {
 function applyPlayerInput(data) {
   const player = players[data.playerId];
   if (!player || !player.alive) return;
+
+  const now = Date.now();
+  if (now - lastInputLogAt > 1000) {
+    lastInputLogAt = now;
+    console.debug('[host] input', {
+      playerId: data.playerId,
+      moveX: Number((data.moveX || 0).toFixed(2)),
+      moveY: Number((data.moveY || 0).toFixed(2)),
+      lookDeltaX: Number((data.lookDeltaX || 0).toFixed(3)),
+      lookDeltaY: Number((data.lookDeltaY || 0).toFixed(3)),
+      shoot: Boolean(data.shoot)
+    });
+  }
   
   // Store input for processing in update loop
   player.lastInput.moveX = THREE.MathUtils.lerp(player.lastInput.moveX, data.moveX || 0, 0.3);

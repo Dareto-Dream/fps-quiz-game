@@ -43,6 +43,7 @@ let shooting = false;
 let leftJoystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, touchId: null };
 let rightJoystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, touchId: null };
 let joystickMaxDistance = { left: 40, right: 40 };
+let lastInputLogAt = 0;
 
 // Quiz state
 let quizActive = false;
@@ -854,6 +855,18 @@ function requestQuiz() {
 // ============================================
 function sendInput() {
   if (!socket || !connected) return;
+
+  const now = performance.now();
+  if (now - lastInputLogAt > 1000) {
+    lastInputLogAt = now;
+    console.debug('[controller] input', {
+      moveX: Number(moveX.toFixed(2)),
+      moveY: Number(moveY.toFixed(2)),
+      lookDeltaX: Number(lookDeltaX.toFixed(3)),
+      lookDeltaY: Number(lookDeltaY.toFixed(3)),
+      shooting
+    });
+  }
   
   socket.emit('player-input', {
     playerId: playerId,

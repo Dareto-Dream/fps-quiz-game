@@ -131,10 +131,17 @@ function setupJoysticks() {
   document.addEventListener('keyup', handleKeyUp);
 
   updateJoystickMetrics();
+  window.addEventListener('orientationchange', updateJoystickMetrics);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      requestAnimationFrame(updateJoystickMetrics);
+    }
+  });
 }
 
 function handleJoystickStart(e, joystick, side) {
   e.preventDefault();
+  updateJoystickMetrics(side);
   const touch = e.changedTouches[0];
   const rect = e.target.closest('.joystick-area').getBoundingClientRect();
   
@@ -184,6 +191,7 @@ let activeMouseJoystick = null;
 let activeMouseSide = null;
 
 function handleMouseJoystickStart(e, joystick, side) {
+  updateJoystickMetrics(side);
   const rect = e.target.closest('.joystick-area').getBoundingClientRect();
   
   joystick.active = true;
@@ -240,16 +248,18 @@ function updateJoystickVisual(joystick, side) {
   handle.style.transform = `translate(calc(-50% + ${clampedX}px), calc(-50% + ${clampedY}px))`;
   
   // Update input values
-  const normalizedX = clampedX / maxDist;
-  const normalizedY = clampedY / maxDist;
-  
+  const normalizedX = maxDist ? clampedX / maxDist : 0;
+  const normalizedY = maxDist ? clampedY / maxDist : 0;
+  const safeX = Number.isFinite(normalizedX) ? normalizedX : 0;
+  const safeY = Number.isFinite(normalizedY) ? normalizedY : 0;
+
   if (side === 'left') {
-    moveX = normalizedX;
-    moveY = normalizedY;
+    moveX = safeX;
+    moveY = safeY;
   } else {
     // Right joystick controls look - accumulate rotation
-    lookDeltaX = normalizedX * 0.05;
-    lookDeltaY = normalizedY * 0.03;
+    lookDeltaX = safeX * 0.05;
+    lookDeltaY = safeY * 0.03;
   }
 }
 
@@ -263,22 +273,24 @@ function resetJoystickVisual(side) {
   }
 }
 
-function updateJoystickMetrics() {
+function updateJoystickMetrics(side) {
   const leftBase = document.querySelector('#left-joystick-area .joystick-base');
   const rightBase = document.querySelector('#right-joystick-area .joystick-base');
   const leftHandle = document.getElementById('left-handle');
   const rightHandle = document.getElementById('right-handle');
 
-  if (leftBase && leftHandle) {
+  if ((!side || side === 'left') && leftBase && leftHandle) {
     const baseSize = leftBase.getBoundingClientRect().width;
     const handleSize = leftHandle.getBoundingClientRect().width;
-    joystickMaxDistance.left = Math.max(10, (baseSize - handleSize) / 2);
+    const maxDistance = Math.max(10, (baseSize - handleSize) / 2);
+    joystickMaxDistance.left = Number.isFinite(maxDistance) ? maxDistance : 40;
   }
 
-  if (rightBase && rightHandle) {
+  if ((!side || side === 'right') && rightBase && rightHandle) {
     const baseSize = rightBase.getBoundingClientRect().width;
     const handleSize = rightHandle.getBoundingClientRect().width;
-    joystickMaxDistance.right = Math.max(10, (baseSize - handleSize) / 2);
+    const maxDistance = Math.max(10, (baseSize - handleSize) / 2);
+    joystickMaxDistance.right = Number.isFinite(maxDistance) ? maxDistance : 40;
   }
 }
 
@@ -385,10 +397,12 @@ function connectToServer() {
     
     document.getElementById('connection-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
-    
+
     // Update player indicator
     document.getElementById('player-name').textContent = playerColorName;
     document.getElementById('player-color').style.backgroundColor = playerColor;
+
+    requestAnimationFrame(updateJoystickMetrics);
     
     // Initialize Three.js
     initThreeJS();

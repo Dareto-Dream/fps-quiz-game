@@ -60,21 +60,13 @@ let killNotificationTimer = 0;
 let ammoNotification = '';
 let ammoNotificationTimer = 0;
 
+// p5 instance (created after connection)
+let p5Instance = null;
+
 // ============================================
-// P5.JS SETUP
+// WAIT FOR DOM TO LOAD
 // ============================================
-function setup() {
-  // Create canvas in game-screen
-  const canvas = createCanvas(windowWidth, windowHeight);
-  canvas.parent('game-canvas');
-  
-  // Calculate UI positions
-  calculateUIPositions();
-  
-  // Prevent default touch behaviors
-  document.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-  document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
-  
+document.addEventListener('DOMContentLoaded', function() {
   // Connection button
   document.getElementById('connect-btn').addEventListener('click', connectToServer);
   
@@ -87,25 +79,7 @@ function setup() {
       if (e.key === 'Enter') connectToServer();
     });
   });
-}
-
-function calculateUIPositions() {
-  // Shoot button - right side, lower area
-  shootButtonRadius = min(width, height) * 0.12;
-  shootButtonX = width * 0.8;
-  shootButtonY = height * 0.7;
-  
-  // Reload button - above shoot button
-  reloadButtonW = shootButtonRadius * 1.5;
-  reloadButtonH = shootButtonRadius * 0.6;
-  reloadButtonX = shootButtonX - reloadButtonW / 2;
-  reloadButtonY = shootButtonY - shootButtonRadius - reloadButtonH - 20;
-}
-
-function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
-  calculateUIPositions();
-}
+});
 
 // ============================================
 // CONNECTION
@@ -152,6 +126,9 @@ function connectToServer() {
     document.getElementById('connection-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
     
+    // NOW initialize p5.js
+    initP5();
+    
     // Start sending input
     setInterval(sendInput, 33); // 30Hz
   });
@@ -185,6 +162,102 @@ function connectToServer() {
 
 function showConnectionError(message) {
   document.getElementById('connection-error').textContent = message;
+}
+
+// ============================================
+// INITIALIZE P5.JS (after connection)
+// ============================================
+function initP5() {
+  p5Instance = new p5(function(p) {
+    
+    p.setup = function() {
+      const canvas = p.createCanvas(p.windowWidth, p.windowHeight);
+      canvas.parent('game-canvas');
+      calculateUIPositions(p);
+    };
+    
+    p.windowResized = function() {
+      p.resizeCanvas(p.windowWidth, p.windowHeight);
+      calculateUIPositions(p);
+    };
+    
+    p.draw = function() {
+      if (!connected) return;
+      
+      p.background(20, 20, 35);
+      
+      // Draw HUD
+      drawHealthBar(p);
+      drawAmmoCounter(p);
+      drawStats(p);
+      drawMatchTimer(p);
+      drawJoystick(p);
+      drawShootButton(p);
+      drawReloadButton(p);
+      drawNotifications(p);
+      drawPlayerInfo(p);
+    };
+    
+    p.touchStarted = function(event) {
+      // Only handle touches on the canvas
+      if (event.target.tagName === 'CANVAS') {
+        for (let t of p.touches) {
+          handleTouchStart(t, p);
+        }
+        return false;
+      }
+      return true;
+    };
+    
+    p.touchMoved = function(event) {
+      if (event.target.tagName === 'CANVAS') {
+        for (let t of p.touches) {
+          handleTouchMove(t, p);
+        }
+        return false;
+      }
+      return true;
+    };
+    
+    p.touchEnded = function(event) {
+      // Check which touches ended
+      const activeTouchIds = p.touches.map(t => t.id);
+      
+      if (joystickTouchId !== null && !activeTouchIds.includes(joystickTouchId)) {
+        joystickActive = false;
+        joystickTouchId = null;
+        moveX = 0;
+        moveY = 0;
+      }
+      
+      if (lookTouchId !== null && !activeTouchIds.includes(lookTouchId)) {
+        lookActive = false;
+        lookTouchId = null;
+      }
+      
+      if (shootTouchId !== null && !activeTouchIds.includes(shootTouchId)) {
+        shootActive = false;
+        shootTouchId = null;
+        shooting = false;
+      }
+      
+      return false;
+    };
+    
+  }, 'game-canvas');
+}
+
+function calculateUIPositions(p) {
+  // Shoot button - right side, lower area
+  shootButtonRadius = Math.min(p.width, p.height) * 0.12;
+  shootButtonX = p.width * 0.8;
+  shootButtonY = p.height * 0.7;
+  
+  // Reload button - above shoot button
+  reloadButtonW = shootButtonRadius * 1.5;
+  reloadButtonH = shootButtonRadius * 0.6;
+  reloadButtonX = shootButtonX - reloadButtonW / 2;
+  reloadButtonY = shootButtonY - shootButtonRadius - reloadButtonH - 20;
 }
 
 // ============================================
@@ -365,52 +438,13 @@ function requestQuiz() {
 // ============================================
 // INPUT HANDLING
 // ============================================
-function touchStarted() {
-  for (let t of touches) {
-    handleTouchStart(t);
-  }
-  return false;
-}
-
-function touchMoved() {
-  for (let t of touches) {
-    handleTouchMove(t);
-  }
-  return false;
-}
-
-function touchEnded() {
-  // Check which touches ended
-  const activeTouchIds = touches.map(t => t.id);
-  
-  if (joystickTouchId !== null && !activeTouchIds.includes(joystickTouchId)) {
-    joystickActive = false;
-    joystickTouchId = null;
-    moveX = 0;
-    moveY = 0;
-  }
-  
-  if (lookTouchId !== null && !activeTouchIds.includes(lookTouchId)) {
-    lookActive = false;
-    lookTouchId = null;
-  }
-  
-  if (shootTouchId !== null && !activeTouchIds.includes(shootTouchId)) {
-    shootActive = false;
-    shootTouchId = null;
-    shooting = false;
-  }
-  
-  return false;
-}
-
-function handleTouchStart(t) {
+function handleTouchStart(t, p) {
   const x = t.x;
   const y = t.y;
   
   // Check shoot button
-  const shootDist = dist(x, y, shootButtonX, shootButtonY);
-  if (shootDist < shootButtonRadius && !shootTouchId) {
+  const shootDist = p.dist(x, y, shootButtonX, shootButtonY);
+  if (shootDist < shootButtonRadius && shootTouchId === null) {
     shootActive = true;
     shootTouchId = t.id;
     shooting = true;
@@ -425,7 +459,7 @@ function handleTouchStart(t) {
   }
   
   // Check left side for joystick (floating)
-  if (x < width * 0.5 && !joystickTouchId) {
+  if (x < p.width * 0.5 && joystickTouchId === null) {
     joystickActive = true;
     joystickTouchId = t.id;
     joystickStartX = x;
@@ -436,7 +470,7 @@ function handleTouchStart(t) {
   }
   
   // Right side for look
-  if (x >= width * 0.5 && !lookTouchId && shootDist >= shootButtonRadius) {
+  if (x >= p.width * 0.5 && lookTouchId === null && shootDist >= shootButtonRadius) {
     lookActive = true;
     lookTouchId = t.id;
     lookStartX = x;
@@ -445,7 +479,7 @@ function handleTouchStart(t) {
   }
 }
 
-function handleTouchMove(t) {
+function handleTouchMove(t, p) {
   // Joystick movement
   if (t.id === joystickTouchId && joystickActive) {
     joystickX = t.x;
@@ -501,98 +535,78 @@ function sendInput() {
 }
 
 // ============================================
-// DRAW
+// DRAW FUNCTIONS
 // ============================================
-function draw() {
-  if (!connected) {
-    // Not connected - canvas not visible
-    return;
-  }
-  
-  background(20, 20, 35);
-  
-  // Draw HUD
-  drawHealthBar();
-  drawAmmoCounter();
-  drawStats();
-  drawMatchTimer();
-  drawJoystick();
-  drawShootButton();
-  drawReloadButton();
-  drawNotifications();
-  drawPlayerInfo();
-}
-
-function drawHealthBar() {
+function drawHealthBar(p) {
   // Health bar background
-  fill(60, 60, 80);
-  noStroke();
-  rect(15, 15, 200, 25, 5);
+  p.fill(60, 60, 80);
+  p.noStroke();
+  p.rect(15, 15, 200, 25, 5);
   
   // Health bar fill
   const healthPercent = myHealth / 100;
-  const healthColor = lerpColor(color(255, 50, 50), color(50, 255, 50), healthPercent);
-  fill(healthColor);
-  rect(15, 15, 200 * healthPercent, 25, 5);
+  const healthColor = p.lerpColor(p.color(255, 50, 50), p.color(50, 255, 50), healthPercent);
+  p.fill(healthColor);
+  p.rect(15, 15, 200 * healthPercent, 25, 5);
   
   // Health text
-  fill(255);
-  textSize(16);
-  textAlign(LEFT, CENTER);
-  text(`HP: ${Math.ceil(myHealth)}`, 25, 27);
+  p.fill(255);
+  p.textSize(16);
+  p.textAlign(p.LEFT, p.CENTER);
+  p.text(`HP: ${Math.ceil(myHealth)}`, 25, 27);
 }
 
-function drawAmmoCounter() {
-  fill(255);
-  textSize(24);
-  textAlign(LEFT, TOP);
-  text(`⚡ ${myAmmo}`, 15, 50);
+function drawAmmoCounter(p) {
+  p.fill(255);
+  p.textSize(24);
+  p.textAlign(p.LEFT, p.TOP);
+  p.text(`⚡ ${myAmmo}`, 15, 50);
   
   // Low ammo warning
   if (myAmmo <= 5 && myAmmo > 0) {
-    fill(255, 200, 0);
-    textSize(14);
-    text('LOW AMMO', 15, 80);
+    p.fill(255, 200, 0);
+    p.textSize(14);
+    p.text('LOW AMMO', 15, 80);
   } else if (myAmmo === 0) {
-    fill(255, 50, 50);
-    textSize(14);
-    text('NO AMMO - TAP RELOAD', 15, 80);
+    p.fill(255, 50, 50);
+    p.textSize(14);
+    p.text('NO AMMO - TAP RELOAD', 15, 80);
   }
 }
 
-function drawStats() {
-  fill(255);
-  textSize(20);
-  textAlign(RIGHT, BOTTOM);
-  text(`K/D: ${myKills}/${myDeaths}`, width - 15, height - 50);
+function drawStats(p) {
+  p.fill(255);
+  p.textSize(20);
+  p.textAlign(p.RIGHT, p.BOTTOM);
+  p.text(`K/D: ${myKills}/${myDeaths}`, p.width - 15, p.height - 50);
   
   if (myStreak >= 3) {
-    fill(255, 150, 0);
-    text(`🔥 STREAK: ${myStreak}`, width - 15, height - 20);
+    p.fill(255, 150, 0);
+    p.text(`🔥 STREAK: ${myStreak}`, p.width - 15, p.height - 20);
   } else {
-    fill(150);
-    text(`Streak: ${myStreak}`, width - 15, height - 20);
+    p.fill(150);
+    p.text(`Streak: ${myStreak}`, p.width - 15, p.height - 20);
   }
 }
 
-function drawMatchTimer() {
+function drawMatchTimer(p) {
   const minutes = Math.floor(matchTime / 60);
   const seconds = Math.floor(matchTime % 60);
   const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
   
-  fill(matchTime <= 30 ? color(255, 50, 50) : color(255, 150, 0));
-  textSize(28);
-  textAlign(CENTER, TOP);
-  text(timeStr, width / 2, 15);
+  p.fill(matchTime <= 30 ? p.color(255, 50, 50) : p.color(255, 150, 0));
+  p.textSize(28);
+  p.textAlign(p.CENTER, p.TOP);
+  p.text(timeStr, p.width / 2, 15);
 }
 
-function drawJoystick() {
+function drawJoystick(p) {
   if (joystickActive) {
     // Joystick base
-    fill(255, 255, 255, 30);
-    stroke(255, 255, 255, 100);
-    strokeWeight(2);
-    ellipse(joystickStartX, joystickStartY, 120, 120);
+    p.fill(255, 255, 255, 30);
+    p.stroke(255, 255, 255, 100);
+    p.strokeWeight(2);
+    p.ellipse(joystickStartX, joystickStartY, 120, 120);
     
     // Joystick handle
     const maxDist = 60;
@@ -608,90 +622,93 @@ function drawJoystick() {
       handleY = joystickStartY + (dy / d) * maxDist;
     }
     
-    fill(255, 255, 255, 150);
-    noStroke();
-    ellipse(handleX, handleY, 50, 50);
+    p.fill(255, 255, 255, 150);
+    p.noStroke();
+    p.ellipse(handleX, handleY, 50, 50);
   } else {
     // Hint text
-    fill(100);
-    textSize(14);
-    textAlign(CENTER, CENTER);
-    text('TOUCH TO MOVE', width * 0.25, height * 0.7);
+    p.fill(100);
+    p.textSize(14);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.noStroke();
+    p.text('TOUCH TO MOVE', p.width * 0.25, p.height * 0.7);
   }
 }
 
-function drawShootButton() {
+function drawShootButton(p) {
   // Shoot button
   if (shootActive) {
-    fill(255, 80, 80);
+    p.fill(255, 80, 80);
   } else if (myAmmo > 0) {
-    fill(200, 50, 50);
+    p.fill(200, 50, 50);
   } else {
-    fill(80, 80, 80);
+    p.fill(80, 80, 80);
   }
   
-  stroke(255, 100, 100);
-  strokeWeight(3);
-  ellipse(shootButtonX, shootButtonY, shootButtonRadius * 2);
+  p.stroke(255, 100, 100);
+  p.strokeWeight(3);
+  p.ellipse(shootButtonX, shootButtonY, shootButtonRadius * 2);
   
   // Shoot text
-  fill(255);
-  noStroke();
-  textSize(22);
-  textAlign(CENTER, CENTER);
-  text('FIRE', shootButtonX, shootButtonY);
+  p.fill(255);
+  p.noStroke();
+  p.textSize(22);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.text('FIRE', shootButtonX, shootButtonY);
 }
 
-function drawReloadButton() {
+function drawReloadButton(p) {
   // Reload button
   if (myAmmo < 30) {
-    fill(50, 150, 50);
+    p.fill(50, 150, 50);
   } else {
-    fill(50, 80, 50);
+    p.fill(50, 80, 50);
   }
   
-  stroke(100, 200, 100);
-  strokeWeight(2);
-  rect(reloadButtonX, reloadButtonY, reloadButtonW, reloadButtonH, 8);
+  p.stroke(100, 200, 100);
+  p.strokeWeight(2);
+  p.rect(reloadButtonX, reloadButtonY, reloadButtonW, reloadButtonH, 8);
   
   // Reload text
-  fill(255);
-  noStroke();
-  textSize(16);
-  textAlign(CENTER, CENTER);
-  text('RELOAD', reloadButtonX + reloadButtonW / 2, reloadButtonY + reloadButtonH / 2);
+  p.fill(255);
+  p.noStroke();
+  p.textSize(16);
+  p.textAlign(p.CENTER, p.CENTER);
+  p.text('RELOAD', reloadButtonX + reloadButtonW / 2, reloadButtonY + reloadButtonH / 2);
 }
 
-function drawNotifications() {
+function drawNotifications(p) {
   // Kill notification
   if (killNotificationTimer > 0) {
-    const alpha = killNotificationTimer * 255;
-    fill(255, 255, 0, alpha);
-    textSize(48);
-    textAlign(CENTER, CENTER);
-    text(killNotification, width / 2, height / 3);
-    killNotificationTimer -= deltaTime / 1000;
+    const alpha = killNotificationTimer * 127;
+    p.fill(255, 255, 0, alpha);
+    p.textSize(48);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.noStroke();
+    p.text(killNotification, p.width / 2, p.height / 3);
+    killNotificationTimer -= p.deltaTime / 1000;
   }
   
   // Ammo notification
   if (ammoNotificationTimer > 0) {
-    const alpha = ammoNotificationTimer * 255;
-    fill(0, 255, 100, alpha);
-    textSize(32);
-    textAlign(CENTER, CENTER);
-    text(ammoNotification, width / 2, height / 2);
-    ammoNotificationTimer -= deltaTime / 1000;
+    const alpha = ammoNotificationTimer * 127;
+    p.fill(0, 255, 100, alpha);
+    p.textSize(32);
+    p.textAlign(p.CENTER, p.CENTER);
+    p.noStroke();
+    p.text(ammoNotification, p.width / 2, p.height / 2);
+    ammoNotificationTimer -= p.deltaTime / 1000;
   }
 }
 
-function drawPlayerInfo() {
+function drawPlayerInfo(p) {
   // Player color indicator
-  fill(playerColor);
-  noStroke();
-  ellipse(width - 30, 30, 30, 30);
+  p.fill(playerColor);
+  p.noStroke();
+  p.ellipse(p.width - 30, 30, 30, 30);
   
-  fill(255);
-  textSize(14);
-  textAlign(RIGHT, CENTER);
-  text(playerColorName, width - 50, 30);
+  p.fill(255);
+  p.textSize(14);
+  p.textAlign(p.RIGHT, p.CENTER);
+  p.text(playerColorName, p.width - 50, 30);
 }

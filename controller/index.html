@@ -11,10 +11,7 @@
       margin: 0;
       padding: 0;
       box-sizing: border-box;
-      touch-action: none;
       -webkit-touch-callout: none;
-      -webkit-user-select: none;
-      user-select: none;
     }
     
     html, body {
@@ -23,6 +20,25 @@
       overflow: hidden;
       background: #1a1a2e;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Only disable touch actions on game canvas */
+    #game-canvas {
+      touch-action: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    
+    /* Allow normal interaction on form elements */
+    input, button, .quiz-option {
+      touch-action: auto;
+      -webkit-user-select: auto;
+      user-select: auto;
+    }
+    
+    #quiz-modal {
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
     }
     
     #connection-screen {

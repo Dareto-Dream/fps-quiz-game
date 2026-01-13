@@ -67,6 +67,18 @@ let p5Instance = null;
 // WAIT FOR DOM TO LOAD
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
+  // Auto-fill server IP from current page hostname
+  const currentHost = window.location.hostname;
+  if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+    document.getElementById('server-ip').value = currentHost;
+  }
+  
+  // Auto-fill port from current page port
+  const currentPort = window.location.port;
+  if (currentPort) {
+    document.getElementById('server-port').value = currentPort;
+  }
+  
   // Connection button
   document.getElementById('connect-btn').addEventListener('click', connectToServer);
   

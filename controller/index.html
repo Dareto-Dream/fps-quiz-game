@@ -21,10 +21,26 @@
       background: #1a1a2e;
       font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
+
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+      --hud-padding: clamp(12px, 2.5vw, 20px);
+      --joystick-size: clamp(110px, 22vw, 160px);
+      --joystick-base-size: clamp(90px, 18vw, 130px);
+      --joystick-handle-size: clamp(40px, 10vw, 60px);
+      --action-button-size: clamp(64px, 14vw, 90px);
+      --reload-button-width: clamp(56px, 12vw, 78px);
+      --reload-button-height: clamp(36px, 7vw, 48px);
+      --button-gap: clamp(12px, 2vw, 18px);
+    }
     
     #game-container {
       width: 100%;
-      height: 100%;
+      height: 100dvh;
+      min-height: 100svh;
       position: relative;
       touch-action: none;
       -webkit-user-select: none;
@@ -37,6 +53,7 @@
       left: 0;
       width: 100%;
       height: 100%;
+      display: block;
     }
     
     #hud-overlay {
@@ -148,9 +165,9 @@
     /* HUD Elements */
     #health-bar-container {
       position: absolute;
-      top: 15px;
-      left: 15px;
-      width: 150px;
+      top: calc(var(--hud-padding) + var(--safe-top));
+      left: calc(var(--hud-padding) + var(--safe-left));
+      width: clamp(120px, 24vw, 170px);
       pointer-events: none;
     }
     
@@ -176,38 +193,38 @@
     
     #ammo-display {
       position: absolute;
-      top: 45px;
-      left: 15px;
+      top: calc(var(--hud-padding) + var(--safe-top) + 30px);
+      left: calc(var(--hud-padding) + var(--safe-left));
       color: white;
-      font-size: 20px;
+      font-size: clamp(16px, 4vw, 20px);
       pointer-events: none;
     }
     
     #stats-display {
       position: absolute;
-      bottom: 15px;
-      right: 15px;
+      bottom: calc(var(--hud-padding) + var(--safe-bottom));
+      right: calc(var(--hud-padding) + var(--safe-right));
       color: white;
-      font-size: 16px;
+      font-size: clamp(12px, 3.5vw, 16px);
       text-align: right;
       pointer-events: none;
     }
     
     #timer-display {
       position: absolute;
-      top: 15px;
+      top: calc(var(--hud-padding) + var(--safe-top));
       left: 50%;
       transform: translateX(-50%);
       color: #ff6600;
-      font-size: 24px;
+      font-size: clamp(18px, 4.5vw, 26px);
       font-weight: bold;
       pointer-events: none;
     }
     
     #player-indicator {
       position: absolute;
-      top: 15px;
-      right: 15px;
+      top: calc(var(--hud-padding) + var(--safe-top));
+      right: calc(var(--hud-padding) + var(--safe-right));
       display: flex;
       align-items: center;
       pointer-events: none;
@@ -259,24 +276,25 @@
     /* Joysticks */
     .joystick-area {
       position: absolute;
-      bottom: 20px;
-      width: 140px;
-      height: 140px;
+      bottom: calc(var(--hud-padding) + var(--safe-bottom));
+      width: var(--joystick-size);
+      height: var(--joystick-size);
       pointer-events: auto;
+      touch-action: none;
     }
     
     #left-joystick-area {
-      left: 20px;
+      left: calc(var(--hud-padding) + var(--safe-left));
     }
     
     #right-joystick-area {
-      right: 20px;
+      right: calc(var(--hud-padding) + var(--safe-right));
     }
     
     .joystick-base {
       position: absolute;
-      width: 120px;
-      height: 120px;
+      width: var(--joystick-base-size);
+      height: var(--joystick-base-size);
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.1);
       border: 2px solid rgba(255, 255, 255, 0.3);
@@ -287,8 +305,8 @@
     
     .joystick-handle {
       position: absolute;
-      width: 50px;
-      height: 50px;
+      width: var(--joystick-handle-size);
+      height: var(--joystick-handle-size);
       border-radius: 50%;
       background: rgba(255, 255, 255, 0.5);
       top: 50%;
@@ -309,10 +327,10 @@
     /* Fire button */
     #fire-btn {
       position: absolute;
-      bottom: 180px;
-      right: 40px;
-      width: 80px;
-      height: 80px;
+      bottom: calc(var(--hud-padding) + var(--safe-bottom) + var(--joystick-size) + var(--button-gap));
+      right: calc(var(--hud-padding) + var(--safe-right));
+      width: var(--action-button-size);
+      height: var(--action-button-size);
       border-radius: 50%;
       background: rgba(200, 50, 50, 0.8);
       border: 3px solid rgba(255, 100, 100, 0.8);
@@ -329,10 +347,10 @@
     /* Reload button */
     #reload-btn {
       position: absolute;
-      bottom: 270px;
-      right: 50px;
-      width: 60px;
-      height: 40px;
+      bottom: calc(var(--hud-padding) + var(--safe-bottom) + var(--joystick-size) + var(--action-button-size) + (var(--button-gap) * 2));
+      right: calc(var(--hud-padding) + var(--safe-right) + 6px);
+      width: var(--reload-button-width);
+      height: var(--reload-button-height);
       border-radius: 8px;
       background: rgba(50, 150, 50, 0.8);
       border: 2px solid rgba(100, 200, 100, 0.8);

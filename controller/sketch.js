@@ -19,6 +19,10 @@ let myStreak = 0;
 let isAlive = true;
 let respawnTimer = 0;
 let matchTime = 300;
+let matchTimeBase = 300;
+let matchSyncAt = 0;
+let matchTimerActive = false;
+let lastTimerWholeSeconds = null;
 
 // Player position/rotation (synced from host)
 let myPosition = new THREE.Vector3(0, 0, 0);
@@ -38,6 +42,7 @@ let shooting = false;
 // Joystick state
 let leftJoystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, touchId: null };
 let rightJoystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, touchId: null };
+let joystickMaxDistance = { left: 40, right: 40 };
 
 // Quiz state
 let quizActive = false;
@@ -124,10 +129,19 @@ function setupJoysticks() {
   // Keyboard for desktop
   document.addEventListener('keydown', handleKeyDown);
   document.addEventListener('keyup', handleKeyUp);
+
+  updateJoystickMetrics();
+  window.addEventListener('orientationchange', updateJoystickMetrics);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      requestAnimationFrame(updateJoystickMetrics);
+    }
+  });
 }
 
 function handleJoystickStart(e, joystick, side) {
   e.preventDefault();
+  updateJoystickMetrics(side);
   const touch = e.changedTouches[0];
   const rect = e.target.closest('.joystick-area').getBoundingClientRect();
   
@@ -177,6 +191,7 @@ let activeMouseJoystick = null;
 let activeMouseSide = null;
 
 function handleMouseJoystickStart(e, joystick, side) {
+  updateJoystickMetrics(side);
   const rect = e.target.closest('.joystick-area').getBoundingClientRect();
   
   joystick.active = true;
@@ -216,7 +231,7 @@ function handleMouseJoystickEnd(e) {
 
 function updateJoystickVisual(joystick, side) {
   const handle = document.getElementById(side === 'left' ? 'left-handle' : 'right-handle');
-  const maxDist = 40;
+  const maxDist = joystickMaxDistance[side] || 40;
   
   const dx = joystick.currentX - joystick.startX;
   const dy = joystick.currentY - joystick.startY;
@@ -233,16 +248,18 @@ function updateJoystickVisual(joystick, side) {
   handle.style.transform = `translate(calc(-50% + ${clampedX}px), calc(-50% + ${clampedY}px))`;
   
   // Update input values
-  const normalizedX = clampedX / maxDist;
-  const normalizedY = clampedY / maxDist;
-  
+  const normalizedX = maxDist ? clampedX / maxDist : 0;
+  const normalizedY = maxDist ? clampedY / maxDist : 0;
+  const safeX = Number.isFinite(normalizedX) ? normalizedX : 0;
+  const safeY = Number.isFinite(normalizedY) ? normalizedY : 0;
+
   if (side === 'left') {
-    moveX = normalizedX;
-    moveY = normalizedY;
+    moveX = safeX;
+    moveY = safeY;
   } else {
     // Right joystick controls look - accumulate rotation
-    lookDeltaX = normalizedX * 0.05;
-    lookDeltaY = normalizedY * 0.03;
+    lookDeltaX = safeX * 0.05;
+    lookDeltaY = safeY * 0.03;
   }
 }
 
@@ -253,6 +270,27 @@ function resetJoystickVisual(side) {
   if (side === 'right') {
     lookDeltaX = 0;
     lookDeltaY = 0;
+  }
+}
+
+function updateJoystickMetrics(side) {
+  const leftBase = document.querySelector('#left-joystick-area .joystick-base');
+  const rightBase = document.querySelector('#right-joystick-area .joystick-base');
+  const leftHandle = document.getElementById('left-handle');
+  const rightHandle = document.getElementById('right-handle');
+
+  if ((!side || side === 'left') && leftBase && leftHandle) {
+    const baseSize = leftBase.getBoundingClientRect().width;
+    const handleSize = leftHandle.getBoundingClientRect().width;
+    const maxDistance = Math.max(10, (baseSize - handleSize) / 2);
+    joystickMaxDistance.left = Number.isFinite(maxDistance) ? maxDistance : 40;
+  }
+
+  if ((!side || side === 'right') && rightBase && rightHandle) {
+    const baseSize = rightBase.getBoundingClientRect().width;
+    const handleSize = rightHandle.getBoundingClientRect().width;
+    const maxDistance = Math.max(10, (baseSize - handleSize) / 2);
+    joystickMaxDistance.right = Number.isFinite(maxDistance) ? maxDistance : 40;
   }
 }
 
@@ -359,10 +397,12 @@ function connectToServer() {
     
     document.getElementById('connection-screen').style.display = 'none';
     document.getElementById('game-screen').style.display = 'block';
-    
+
     // Update player indicator
     document.getElementById('player-name').textContent = playerColorName;
     document.getElementById('player-color').style.backgroundColor = playerColor;
+
+    requestAnimationFrame(updateJoystickMetrics);
     
     // Initialize Three.js
     initThreeJS();
@@ -539,6 +579,8 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  updateJoystickMetrics();
 }
 
 // ============================================
@@ -557,8 +599,7 @@ function handleGameState(data) {
     updateHUD();
   }
   if (data.matchTime !== undefined) {
-    matchTime = data.matchTime;
-    updateTimer();
+    syncMatchTimer(data.matchTime);
   }
 }
 
@@ -667,11 +708,11 @@ function handleAmmoUpdated(data) {
 }
 
 function handleMatchTimer(data) {
-  matchTime = data.timeRemaining;
-  updateTimer();
+  syncMatchTimer(data.timeRemaining);
 }
 
 function handleMatchEnd(data) {
+  matchTimerActive = false;
   document.getElementById('match-end').style.display = 'flex';
   
   if (data.winner) {
@@ -711,6 +752,33 @@ function updateTimer() {
   document.getElementById('timer-display').textContent = 
     `${minutes}:${seconds.toString().padStart(2, '0')}`;
   document.getElementById('timer-display').style.color = matchTime <= 30 ? '#ff4444' : '#ff6600';
+}
+
+function syncMatchTimer(timeRemaining) {
+  matchTimeBase = Math.max(0, timeRemaining);
+  matchSyncAt = performance.now();
+  matchTimerActive = true;
+  matchTime = matchTimeBase;
+  lastTimerWholeSeconds = Math.floor(matchTime);
+  updateTimer();
+}
+
+function tickMatchTimer() {
+  if (!matchTimerActive || matchSyncAt === 0) return;
+
+  const elapsedSeconds = (performance.now() - matchSyncAt) / 1000;
+  const nextTime = Math.max(0, matchTimeBase - elapsedSeconds);
+  const nextWholeSeconds = Math.floor(nextTime);
+
+  matchTime = nextTime;
+  if (nextWholeSeconds !== lastTimerWholeSeconds) {
+    lastTimerWholeSeconds = nextWholeSeconds;
+    updateTimer();
+  }
+
+  if (nextTime <= 0) {
+    matchTimerActive = false;
+  }
 }
 
 function showNotification(elementId, text, duration) {
@@ -806,6 +874,8 @@ function animate() {
   requestAnimationFrame(animate);
   
   if (!renderer || !scene || !camera) return;
+
+  tickMatchTimer();
   
   // Apply look rotation locally for responsive feel
   if (lookDeltaX !== 0 || lookDeltaY !== 0) {

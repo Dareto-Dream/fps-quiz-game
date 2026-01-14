@@ -586,9 +586,9 @@ function applyPlayerInput(data) {
     });
   }
   
-  // Store input for processing in update loop
-  player.lastInput.moveX = THREE.MathUtils.lerp(player.lastInput.moveX, data.moveX || 0, 0.3);
-  player.lastInput.moveY = THREE.MathUtils.lerp(player.lastInput.moveY, data.moveY || 0, 0.3);
+  // Store input for processing in update loop - use direct assignment for responsiveness
+  player.lastInput.moveX = data.moveX || 0;
+  player.lastInput.moveY = data.moveY || 0;
   player.lastInput.lookDeltaX = data.lookDeltaX || 0;
   player.lastInput.lookDeltaY = data.lookDeltaY || 0;
   player.lastInput.shoot = data.shoot || false;
@@ -638,7 +638,7 @@ function updateAlivePlayer(player, deltaTime) {
     player.body.material.emissiveIntensity = 0;
   }
   
-  // Apply rotation from input
+  // Apply rotation from input FIRST
   player.rotation.y -= player.lastInput.lookDeltaX * CONFIG.LOOK_SENSITIVITY * 100;
   player.rotation.x -= player.lastInput.lookDeltaY * CONFIG.LOOK_SENSITIVITY * 100;
   player.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotation.x));
@@ -646,11 +646,11 @@ function updateAlivePlayer(player, deltaTime) {
   // Apply rotation to group
   player.group.rotation.y = player.rotation.y;
   
-  // Calculate movement - only if there's actual input
+  // Calculate movement using UPDATED rotation
   if (Math.abs(player.lastInput.moveX) > 0.001 || Math.abs(player.lastInput.moveY) > 0.001) {
     const moveSpeed = CONFIG.MOVE_SPEED * deltaTime;
     
-    // Calculate direction vectors relative to player's rotation
+    // Calculate direction vectors relative to player's CURRENT rotation
     const forward = new THREE.Vector3(
       Math.sin(player.rotation.y),
       0,
@@ -681,7 +681,7 @@ function updateAlivePlayer(player, deltaTime) {
     newX = Math.max(-boundary, Math.min(boundary, newX));
     newZ = Math.max(-boundary, Math.min(boundary, newZ));
     
-    // DIRECTLY set the group position - this is the key fix
+    // DIRECTLY set the group position
     player.group.position.x = newX;
     player.group.position.z = newZ;
   }
@@ -700,7 +700,6 @@ function updateAlivePlayer(player, deltaTime) {
   player.lastInput.lookDeltaY = 0;
 }
 
-// FIX: Added missing updateDeadPlayer function
 function updateDeadPlayer(player, deltaTime) {
   player.respawnTimer -= deltaTime;
   
@@ -1004,7 +1003,7 @@ function addKillFeed(killerName, victimName, killerColor, victimColor) {
 let lastBroadcast = 0;
 function broadcastGameState() {
   const now = Date.now();
-  if (now - lastBroadcast < 100) return; // 10Hz
+  if (now - lastBroadcast < 33) return; // 30Hz for smoother updates
   lastBroadcast = now;
   
   const state = {

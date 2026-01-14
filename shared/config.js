@@ -1,7 +1,7 @@
 // Game configuration - Server-side only
 module.exports = {
   SERVER_PORT: 3000,
-  MAX_PLAYERS: 8,
+  MAX_PLAYERS: 24,
   MIN_PLAYERS: 2,
   PLAYER_MAX_HEALTH: 100,
   PLAYER_MAX_AMMO: 30,

@@ -641,16 +641,22 @@ function handleFullState(data) {
   // Update my position/rotation from host
   if (data.players && data.players[playerId]) {
     const myData = data.players[playerId];
-    myPosition.set(myData.x, myData.y, myData.z);
+    
+    // Smoothly interpolate position to reduce snapping
+    const serverPos = new THREE.Vector3(myData.x, myData.y, myData.z);
+    const distance = camera.position.distanceTo(serverPos);
+    
+    // Only snap if we're WAY off (> 2 units), otherwise smoothly lerp
+    if (distance > 2) {
+      camera.position.set(myData.x, myData.y + 1.7, myData.z);
+    } else {
+      camera.position.lerp(serverPos.setY(myData.y + 1.7), 0.3);
+    }
+    
+    // Store server rotation for reference but don't override local camera rotation
+    // This prevents fighting between client and server
     myRotationY = myData.rotY;
     myRotationX = myData.rotX;
-    
-    // Update camera position from server (authoritative)
-    camera.position.set(myData.x, myData.y + 1.7, myData.z);
-    
-    // DON'T overwrite local rotation - let client handle rotation locally
-    // The server rotation is used for other players, not the local player
-    // This prevents the "tug of war" between client and server rotation updates
   }
   
   // Update other players
@@ -933,7 +939,7 @@ function requestQuiz() {
 // INPUT SENDING
 // ============================================
 function sendInput() {
-  if (!socket || !connected) return;
+  if (!socket || !connected || !isAlive) return;
 
   const now = performance.now();
   if (now - lastInputLogAt > 1000) {
@@ -1006,27 +1012,32 @@ function animate() {
     gunMesh.rotation.x += (0 - gunMesh.rotation.x) * 0.2;
   }
   
-  // Client-side prediction: move camera locally based on input for smoother feel
-  // Server will send authoritative position updates via full-state
-  if (isAlive && (moveX !== 0 || moveY !== 0)) {
-    const moveSpeed = 8; // Match server CONFIG.MOVE_SPEED
+  // Client-side prediction: move camera based on input for responsive feel
+  // Server position updates will be smoothly interpolated in handleFullState
+  if (isAlive && (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001)) {
+    const moveSpeed = 8 * delta; // Match server CONFIG.MOVE_SPEED
     
-    // Calculate movement direction based on camera's horizontal rotation
-    const forward = new THREE.Vector3(0, 0, -1);
-    const right = new THREE.Vector3(1, 0, 0);
+    // Calculate movement direction based on camera's current rotation
+    const forward = new THREE.Vector3(
+      Math.sin(camera.rotation.y),
+      0,
+      Math.cos(camera.rotation.y)
+    );
     
-    // Apply camera's Y rotation to directions
-    forward.applyAxisAngle(new THREE.Vector3(0, 1, 0), camera.rotation.y);
-    right.applyAxisAngle(new THREE.Vector3(0, 1, 0), camera.rotation.y);
+    const right = new THREE.Vector3(
+      Math.cos(camera.rotation.y),
+      0,
+      -Math.sin(camera.rotation.y)
+    );
     
     // Calculate movement vector
     const movement = new THREE.Vector3();
     movement.addScaledVector(right, moveX);
-    movement.addScaledVector(forward, moveY);
+    movement.addScaledVector(forward, -moveY);
     
     if (movement.length() > 0) {
       movement.normalize();
-      movement.multiplyScalar(moveSpeed * delta);
+      movement.multiplyScalar(moveSpeed);
       
       // Apply movement to camera position
       camera.position.x += movement.x;

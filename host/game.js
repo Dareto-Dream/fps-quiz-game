@@ -712,7 +712,7 @@ function updateAlivePlayer(player, deltaTime) {
     
     // Create movement vector
     const movement = new THREE.Vector3();
-    movement.addScaledVector(forward, -player.lastInput.moveY * moveSpeed); // Forward/backward
+    movement.addScaledVector(forward, player.lastInput.moveY * moveSpeed);  // Forward/backward
     movement.addScaledVector(right, player.lastInput.moveX * moveSpeed);     // Left/right
     
     // Get current position from group

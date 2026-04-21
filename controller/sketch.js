@@ -1087,7 +1087,7 @@ function animate() {
     // Calculate movement vector
     const movement = new THREE.Vector3();
     movement.addScaledVector(right, moveX);
-    movement.addScaledVector(forward, -moveY);
+    movement.addScaledVector(forward, moveY);
     
     if (movement.length() > 0) {
       movement.normalize();

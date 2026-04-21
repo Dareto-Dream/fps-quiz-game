@@ -19,6 +19,286 @@ canvas {
   display: block;
 }
 
+body.lobby-active #connection-info,
+body.lobby-active #player-count,
+body.lobby-active #match-timer,
+body.lobby-active #leaderboard,
+body.lobby-active #kill-feed,
+body.lobby-active #camera-mode {
+  display: none;
+}
+
+/* Host Lobby */
+#lobby-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  color: #fff;
+  background:
+    linear-gradient(90deg, rgba(4, 8, 14, 0.96), rgba(4, 8, 14, 0.68)),
+    rgba(0, 0, 0, 0.35);
+}
+
+body:not(.lobby-active) #lobby-screen {
+  display: none;
+}
+
+.lobby-shell {
+  width: min(1160px, 100%);
+}
+
+.lobby-header,
+.lobby-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.lobby-header {
+  margin-bottom: 22px;
+}
+
+.lobby-kicker,
+.panel-title,
+.lobby-meta span,
+.setting-row span,
+#lobby-status,
+#start-game-message {
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.lobby-kicker {
+  color: #00d4ff;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+
+.lobby-header h1 {
+  font-size: 56px;
+  line-height: 1;
+}
+
+#lobby-status {
+  border: 1px solid rgba(0, 212, 255, 0.55);
+  color: #00d4ff;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+  background: rgba(0, 212, 255, 0.08);
+}
+
+.lobby-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1.25fr 0.85fr;
+  gap: 18px;
+  align-items: stretch;
+}
+
+.lobby-panel {
+  background: rgba(8, 12, 20, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.32);
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #c9d4e5;
+  font-size: 13px;
+  font-weight: 800;
+  margin-bottom: 18px;
+}
+
+#lobby-room-code {
+  color: #ffcc00;
+  font-family: 'Courier New', monospace;
+  font-size: 84px;
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: 10px;
+  margin: 6px 0 24px;
+}
+
+.lobby-meta {
+  display: grid;
+  gap: 10px;
+}
+
+.lobby-meta div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-left: 3px solid #00d4ff;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+}
+
+.lobby-meta span,
+.setting-row span {
+  color: #8b98aa;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.lobby-meta strong {
+  color: #fff;
+  font-size: 17px;
+  word-break: break-word;
+}
+
+#lobby-player-count {
+  color: #00ff88;
+  font-family: 'Courier New', monospace;
+}
+
+#lobby-player-list {
+  display: grid;
+  gap: 10px;
+  max-height: 390px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.lobby-empty {
+  color: #7f8999;
+  padding: 36px 0;
+  text-align: center;
+  font-style: italic;
+}
+
+.lobby-player {
+  display: grid;
+  grid-template-columns: 34px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 54px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.lobby-player-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.8);
+}
+
+.lobby-player-name {
+  font-weight: 800;
+}
+
+.lobby-player-slot {
+  color: #91a0b5;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+}
+
+.lobby-settings-panel {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+}
+
+.setting-row {
+  display: grid;
+  gap: 8px;
+}
+
+.setting-row input {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.setting-row input:focus {
+  outline: 2px solid #00d4ff;
+  outline-offset: 2px;
+}
+
+.lobby-actions {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#start-game-message {
+  color: #9daabe;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+#start-game-btn {
+  min-width: 220px;
+  min-height: 56px;
+  border: 0;
+  border-radius: 8px;
+  background: #ff6600;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+
+#start-game-btn:hover:not(:disabled) {
+  background: #ff8533;
+  transform: translateY(-1px);
+}
+
+#start-game-btn:disabled {
+  cursor: not-allowed;
+  background: #4f5664;
+  color: #b8c0cc;
+}
+
+@media (max-width: 980px) {
+  #lobby-screen {
+    align-items: flex-start;
+    overflow: auto;
+  }
+
+  .lobby-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lobby-header,
+  .lobby-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .lobby-header h1 {
+    font-size: 42px;
+  }
+
+  #lobby-room-code {
+    font-size: 60px;
+  }
+
+  #start-game-btn {
+    width: 100%;
+  }
+}
+
 /* Connection Info - Bottom Left */
 #connection-info {
   position: absolute;

@@ -20,6 +20,10 @@ const io = new Server(server, {
   pingInterval: 25000
 });
 
+const MAX_ROOM_PLAYERS = Math.min(config.MAX_PLAYERS, config.PLAYER_COLORS.length);
+const MIN_MATCH_DURATION = 60;
+const MAX_MATCH_DURATION = 900;
+
 // Enable CORS for all routes
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -69,6 +73,8 @@ app.get('/controller', (req, res) => {
 // API endpoint to get config for clients
 app.get('/api/config', (req, res) => {
   res.json({
+    MAX_PLAYERS: MAX_ROOM_PLAYERS,
+    MIN_PLAYERS: config.MIN_PLAYERS,
     PLAYER_MAX_HEALTH: config.PLAYER_MAX_HEALTH,
     PLAYER_MAX_AMMO: config.PLAYER_MAX_AMMO,
     PLAYER_START_AMMO: config.PLAYER_START_AMMO,
@@ -89,6 +95,75 @@ app.get('/api/config', (req, res) => {
 const rooms = {};
 // Track used colors per room
 const roomColors = {};
+
+function clampInt(value, min, max, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  const target = Number.isFinite(parsed) ? parsed : fallback;
+  return Math.max(min, Math.min(max, target));
+}
+
+function createDefaultRoomSettings() {
+  const maxPlayers = MAX_ROOM_PLAYERS;
+  return {
+    maxPlayers,
+    minPlayers: Math.min(Math.max(config.MIN_PLAYERS || 1, 1), maxPlayers),
+    matchDuration: config.MATCH_DURATION
+  };
+}
+
+function sanitizeRoomSettings(settings, room) {
+  const current = room.settings || createDefaultRoomSettings();
+  const playerCount = room.playerIds.length;
+  const maxPlayers = clampInt(
+    settings && settings.maxPlayers,
+    Math.max(1, playerCount),
+    MAX_ROOM_PLAYERS,
+    current.maxPlayers
+  );
+  const minPlayers = clampInt(
+    settings && settings.minPlayers,
+    1,
+    maxPlayers,
+    Math.min(current.minPlayers, maxPlayers)
+  );
+  const matchDuration = clampInt(
+    settings && settings.matchDuration,
+    MIN_MATCH_DURATION,
+    MAX_MATCH_DURATION,
+    current.matchDuration
+  );
+
+  return { maxPlayers, minPlayers, matchDuration };
+}
+
+function getLobbyState(roomCode) {
+  const room = rooms[roomCode];
+  if (!room) return null;
+
+  return {
+    roomCode,
+    state: room.state,
+    createdAt: room.createdAt,
+    startedAt: room.startedAt || null,
+    playerCount: room.playerIds.length,
+    maxAllowedPlayers: MAX_ROOM_PLAYERS,
+    settings: room.settings,
+    players: room.playerIds.map((playerId, index) => ({
+      playerId,
+      slot: index + 1,
+      color: room.players[playerId].color,
+      colorName: room.players[playerId].colorName,
+      joinedAt: room.players[playerId].joinedAt
+    }))
+  };
+}
+
+function emitLobbyState(roomCode) {
+  const state = getLobbyState(roomCode);
+  if (state) {
+    io.to(roomCode).emit('lobby-state', state);
+  }
+}
 
 // Get local IP address
 function getLocalIPAddress() {
@@ -179,6 +254,9 @@ io.on('connection', (socket) => {
       hostId: socket.id,
       playerIds: [],
       players: {},
+      state: 'lobby',
+      settings: createDefaultRoomSettings(),
+      hostIP: hostIP,
       createdAt: Date.now()
     };
     roomColors[roomCode] = [];
@@ -192,20 +270,31 @@ io.on('connection', (socket) => {
     socket.emit('room-created', {
       roomCode: roomCode,
       hostIP: hostIP,
-      port: config.SERVER_PORT
+      port: config.SERVER_PORT,
+      joinUrl: `http://${hostIP}:${config.SERVER_PORT}/controller`,
+      settings: rooms[roomCode].settings,
+      maxAllowedPlayers: MAX_ROOM_PLAYERS
     });
+    emitLobbyState(roomCode);
   });
   
   // Controller joins room
   socket.on('join-room', (data) => {
     const { roomCode } = data;
     
-    if (!rooms[roomCode]) {
+    const room = rooms[roomCode];
+    
+    if (!room) {
       socket.emit('join-error', { message: 'Room not found' });
       return;
     }
     
-    if (rooms[roomCode].playerIds.length >= config.MAX_PLAYERS) {
+    if (room.state !== 'lobby') {
+      socket.emit('join-error', { message: 'Game already started' });
+      return;
+    }
+    
+    if (room.playerIds.length >= room.settings.maxPlayers) {
       socket.emit('join-error', { message: 'Room is full' });
       return;
     }
@@ -221,11 +310,12 @@ io.on('connection', (socket) => {
     socket.colorIndex = colorInfo.colorIndex;
     socket.join(roomCode);
     
-    rooms[roomCode].playerIds.push(socket.id);
-    rooms[roomCode].players[socket.id] = {
+    room.playerIds.push(socket.id);
+    room.players[socket.id] = {
       color: colorInfo.color,
       colorName: colorInfo.colorName,
-      colorIndex: colorInfo.colorIndex
+      colorIndex: colorInfo.colorIndex,
+      joinedAt: Date.now()
     };
     
     console.log(`Player ${socket.id} (${colorInfo.colorName}) joined room ${roomCode}`);
@@ -235,11 +325,13 @@ io.on('connection', (socket) => {
       playerId: socket.id,
       color: colorInfo.color,
       colorName: colorInfo.colorName,
-      roomCode: roomCode
+      roomCode: roomCode,
+      state: room.state,
+      settings: room.settings
     });
     
     // Notify host
-    const hostSocket = io.sockets.sockets.get(rooms[roomCode].hostId);
+    const hostSocket = io.sockets.sockets.get(room.hostId);
     if (hostSocket) {
       hostSocket.emit('player-connected', {
         playerId: socket.id,
@@ -248,6 +340,50 @@ io.on('connection', (socket) => {
         timestamp: Date.now()
       });
     }
+    
+    emitLobbyState(roomCode);
+  });
+
+  // Host updates lobby settings
+  socket.on('update-room-settings', (data) => {
+    if (!socket.roomCode || !rooms[socket.roomCode]) return;
+    
+    const room = rooms[socket.roomCode];
+    if (room.hostId !== socket.id || room.state !== 'lobby') return;
+    
+    room.settings = sanitizeRoomSettings((data && data.settings) || data || {}, room);
+    emitLobbyState(socket.roomCode);
+  });
+
+  // Host starts the match
+  socket.on('start-game', () => {
+    if (!socket.roomCode || !rooms[socket.roomCode]) return;
+    
+    const room = rooms[socket.roomCode];
+    if (room.hostId !== socket.id) return;
+    
+    if (room.state !== 'lobby') {
+      socket.emit('start-error', { message: 'Game already started' });
+      return;
+    }
+    
+    if (room.playerIds.length < room.settings.minPlayers) {
+      socket.emit('start-error', {
+        message: `Need ${room.settings.minPlayers} player${room.settings.minPlayers === 1 ? '' : 's'} to start`
+      });
+      return;
+    }
+    
+    room.state = 'playing';
+    room.startedAt = Date.now();
+    
+    io.to(socket.roomCode).emit('game-started', {
+      roomCode: socket.roomCode,
+      settings: room.settings,
+      matchDuration: room.settings.matchDuration,
+      startedAt: room.startedAt
+    });
+    emitLobbyState(socket.roomCode);
   });
   
   // Controller sends input
@@ -403,6 +539,7 @@ io.on('connection', (socket) => {
         }
         
         console.log(`Player ${socket.id} left room ${socket.roomCode}`);
+        emitLobbyState(socket.roomCode);
       }
     }
   });

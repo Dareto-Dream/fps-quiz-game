@@ -6,9 +6,71 @@
   <title>Arena FPS - Host Display</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="lobby-active">
   <!-- Three.js Canvas Container -->
   <div id="game-container"></div>
+
+  <!-- Host Lobby -->
+  <div id="lobby-screen">
+    <div class="lobby-shell">
+      <header class="lobby-header">
+        <div>
+          <div class="lobby-kicker">HOST LOBBY</div>
+          <h1>Player Queue</h1>
+        </div>
+        <div id="lobby-status">Creating room...</div>
+      </header>
+
+      <main class="lobby-grid">
+        <section class="lobby-panel lobby-code-panel">
+          <div class="panel-title">Room</div>
+          <div class="label">ROOM CODE</div>
+          <div id="lobby-room-code">----</div>
+          <div class="lobby-meta">
+            <div>
+              <span>Server</span>
+              <strong id="lobby-server-ip">---</strong>
+            </div>
+            <div>
+              <span>Controller</span>
+              <strong id="lobby-join-url">---</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="lobby-panel lobby-players-panel">
+          <div class="panel-title">
+            Players
+            <span id="lobby-player-count">0/8</span>
+          </div>
+          <div id="lobby-player-list">
+            <div class="lobby-empty">Waiting for players...</div>
+          </div>
+        </section>
+
+        <section class="lobby-panel lobby-settings-panel">
+          <div class="panel-title">Settings</div>
+          <label class="setting-row" for="setting-max-players">
+            <span>Lobby size</span>
+            <input id="setting-max-players" type="number" min="1" max="8" step="1" value="8">
+          </label>
+          <label class="setting-row" for="setting-min-players">
+            <span>Minimum players</span>
+            <input id="setting-min-players" type="number" min="1" max="8" step="1" value="2">
+          </label>
+          <label class="setting-row" for="setting-match-minutes">
+            <span>Match minutes</span>
+            <input id="setting-match-minutes" type="number" min="1" max="15" step="1" value="5">
+          </label>
+        </section>
+      </main>
+
+      <footer class="lobby-actions">
+        <div id="start-game-message">Waiting for room code...</div>
+        <button id="start-game-btn" disabled>START MATCH</button>
+      </footer>
+    </div>
+  </div>
   
   <!-- Connection Info (Bottom Left) -->
   <div id="connection-info">

@@ -9,6 +9,9 @@ let playerId = '';
 let playerColor = '#ffffff';
 let playerColorName = '';
 let roomCode = '';
+let lobbyState = null;
+let inputInterval = null;
+let animationStarted = false;
 
 // Player stats
 let myHealth = 100;
@@ -402,22 +405,20 @@ function connectToServer() {
     socket.io.opts.reconnection = true;
     
     document.getElementById('connection-screen').style.display = 'none';
-    document.getElementById('game-screen').style.display = 'block';
+    document.getElementById('lobby-wait-screen').style.display = 'flex';
+    document.getElementById('game-screen').style.display = 'none';
 
     // Update player indicator
     document.getElementById('player-name').textContent = playerColorName;
     document.getElementById('player-color').style.backgroundColor = playerColor;
-
-    requestAnimationFrame(updateJoystickMetrics);
-    
-    // Initialize Three.js
-    initThreeJS();
-    
-    // Start game loop
-    animate();
-    
-    // Start sending input
-    setInterval(sendInput, 33);
+    document.getElementById('wait-player-name').textContent = `${playerColorName} Player`;
+    document.getElementById('wait-player-color').style.backgroundColor = playerColor;
+    document.getElementById('wait-room-code').textContent = roomCode;
+    updateLobbyWait({
+      roomCode,
+      playerCount: 1,
+      settings: data.settings || { maxPlayers: 0, matchDuration: matchTime }
+    });
   });
   
   socket.on('join-error', (data) => {
@@ -435,6 +436,8 @@ function connectToServer() {
   });
   
   // Game events
+  socket.on('lobby-state', handleLobbyState);
+  socket.on('game-started', handleGameStarted);
   socket.on('game-state', handleGameState);
   socket.on('full-state', handleFullState);
   socket.on('kill-event', handleKillEvent);
@@ -449,6 +452,57 @@ function connectToServer() {
 
 function showConnectionError(message) {
   document.getElementById('connection-error').textContent = message;
+}
+
+function handleLobbyState(data) {
+  lobbyState = data;
+  updateLobbyWait(data);
+}
+
+function updateLobbyWait(data) {
+  const settings = data.settings || {};
+  const maxPlayers = settings.maxPlayers || 0;
+  const minPlayers = settings.minPlayers || 1;
+  const playerCount = data.playerCount || 0;
+  const matchDuration = settings.matchDuration || matchTime;
+  const matchMinutes = Math.max(1, Math.round(matchDuration / 60));
+
+  document.getElementById('wait-room-code').textContent = data.roomCode || roomCode || '----';
+  document.getElementById('wait-player-count').textContent = `${playerCount}/${maxPlayers}`;
+  document.getElementById('wait-match-length').textContent = `${matchMinutes} min`;
+
+  if (playerCount < minPlayers) {
+    const needed = minPlayers - playerCount;
+    document.getElementById('wait-status').textContent =
+      `Waiting for ${needed} more player${needed === 1 ? '' : 's'}...`;
+  } else {
+    document.getElementById('wait-status').textContent = 'Waiting for host...';
+  }
+}
+
+function handleGameStarted(data) {
+  const duration = data.matchDuration || (data.settings && data.settings.matchDuration) || matchTime;
+
+  document.getElementById('lobby-wait-screen').style.display = 'none';
+  document.getElementById('game-screen').style.display = 'block';
+  document.getElementById('match-end').style.display = 'none';
+
+  if (!renderer) {
+    initThreeJS();
+  }
+
+  clock = new THREE.Clock();
+  syncMatchTimer(duration);
+  requestAnimationFrame(updateJoystickMetrics);
+
+  if (!animationStarted) {
+    animationStarted = true;
+    animate();
+  }
+
+  if (!inputInterval) {
+    inputInterval = setInterval(sendInput, 33);
+  }
 }
 
 // ============================================

@@ -51,6 +51,14 @@ let matchTimer = CONFIG.MATCH_DURATION;
 let matchActive = false;
 let roomCode = '';
 let serverIP = '';
+let serverPort = '';
+let joinUrl = '';
+let lobbyState = null;
+let lobbySettings = {
+  maxPlayers: CONFIG.MAX_PLAYERS,
+  minPlayers: 2,
+  matchDuration: CONFIG.MATCH_DURATION
+};
 
 // Camera state
 const CameraState = { OVERVIEW: 'overview', FOLLOWING: 'following' };
@@ -83,6 +91,7 @@ async function init() {
   
   initThreeJS();
   initAudio();
+  initLobbyControls();
   initSocket();
   createArena();
   console.log('Game initialized');
@@ -247,6 +256,26 @@ function playSound(soundName) {
 // ============================================
 // SOCKET INITIALIZATION
 // ============================================
+function initLobbyControls() {
+  const startButton = document.getElementById('start-game-btn');
+  const settingInputs = [
+    document.getElementById('setting-max-players'),
+    document.getElementById('setting-min-players'),
+    document.getElementById('setting-match-minutes')
+  ];
+
+  startButton.addEventListener('click', () => {
+    if (!socket || !roomCode) return;
+    startButton.disabled = true;
+    document.getElementById('start-game-message').textContent = 'Starting match...';
+    socket.emit('start-game');
+  });
+
+  settingInputs.forEach(input => {
+    input.addEventListener('change', sendLobbySettings);
+  });
+}
+
 function initSocket() {
   socket = io({
     transports: ['websocket'],
@@ -262,6 +291,9 @@ function initSocket() {
   socket.on('room-created', (data) => {
     roomCode = data.roomCode;
     serverIP = data.hostIP;
+    serverPort = data.port;
+    joinUrl = data.joinUrl || `${window.location.origin}/controller`;
+    lobbySettings = data.settings || lobbySettings;
     
     document.getElementById('waiting-message').style.display = 'none';
     document.getElementById('ip-display').style.display = 'block';
@@ -270,10 +302,21 @@ function initSocket() {
     document.getElementById('room-code').textContent = roomCode;
     
     console.log(`Room created: ${roomCode} at ${serverIP}:${data.port}`);
-    
-    // Start match timer
-    matchActive = true;
-    matchTimer = CONFIG.MATCH_DURATION;
+
+    updateLobbyFromRoomCreated(data);
+  });
+
+  socket.on('lobby-state', (data) => {
+    handleLobbyState(data);
+  });
+
+  socket.on('game-started', (data) => {
+    handleGameStarted(data);
+  });
+
+  socket.on('start-error', (data) => {
+    document.getElementById('start-game-message').textContent = data.message || 'Unable to start match';
+    updateLobbyStartState();
   });
   
   socket.on('player-connected', (data) => {
@@ -526,6 +569,7 @@ function createPlayer(playerId, color, colorName) {
   };
   
   updateLeaderboard();
+  updateLobbyStartState();
 }
 
 function removePlayer(playerId) {
@@ -535,6 +579,7 @@ function removePlayer(playerId) {
     delete players[playerId];
     updateLeaderboard();
     updateStreakLeader();
+    updateLobbyStartState();
   }
 }
 
@@ -570,6 +615,8 @@ function respawnPlayer(player) {
 // INPUT HANDLING
 // ============================================
 function applyPlayerInput(data) {
+  if (!matchActive) return;
+
   const player = players[data.playerId];
   if (!player || !player.alive) return;
 
@@ -932,6 +979,167 @@ function updateStreakLeader() {
 // ============================================
 // UI UPDATES
 // ============================================
+function clampNumber(value, min, max) {
+  const parsed = Number.parseInt(value, 10);
+  const target = Number.isFinite(parsed) ? parsed : min;
+  return Math.max(min, Math.min(max, target));
+}
+
+function updateLobbyFromRoomCreated(data) {
+  document.body.classList.add('lobby-active');
+  document.getElementById('lobby-room-code').textContent = data.roomCode || '----';
+  document.getElementById('lobby-server-ip').textContent = `${data.hostIP}:${data.port}`;
+  document.getElementById('lobby-join-url').textContent = joinUrl;
+  applyLobbySettings(data.settings || lobbySettings, data.maxAllowedPlayers);
+  updateLobbyStartState();
+}
+
+function handleLobbyState(data) {
+  lobbyState = data;
+  lobbySettings = data.settings || lobbySettings;
+
+  if (data.roomCode) {
+    document.getElementById('lobby-room-code').textContent = data.roomCode;
+  }
+
+  applyLobbySettings(lobbySettings, data.maxAllowedPlayers);
+  renderLobbyPlayers(data.players || []);
+  updatePlayerCount();
+  updateLobbyStartState();
+}
+
+function handleGameStarted(data) {
+  lobbySettings = data.settings || lobbySettings;
+  CONFIG.MATCH_DURATION = data.matchDuration || lobbySettings.matchDuration || CONFIG.MATCH_DURATION;
+  matchTimer = CONFIG.MATCH_DURATION;
+  matchActive = true;
+
+  document.body.classList.remove('lobby-active');
+  document.getElementById('match-end-screen').style.display = 'none';
+  document.getElementById('start-game-message').textContent = 'Match running';
+
+  updateTimerDisplay();
+  updatePlayerCount();
+}
+
+function applyLobbySettings(settings, maxAllowedPlayers) {
+  const maxPlayersInput = document.getElementById('setting-max-players');
+  const minPlayersInput = document.getElementById('setting-min-players');
+  const matchMinutesInput = document.getElementById('setting-match-minutes');
+  const maxAllowed = maxAllowedPlayers || CONFIG.MAX_PLAYERS;
+  const playerCount = lobbyState ? lobbyState.playerCount : 0;
+
+  maxPlayersInput.max = maxAllowed;
+  maxPlayersInput.min = Math.max(1, playerCount);
+  maxPlayersInput.value = settings.maxPlayers;
+
+  minPlayersInput.max = settings.maxPlayers;
+  minPlayersInput.value = settings.minPlayers;
+
+  matchMinutesInput.value = Math.round(settings.matchDuration / 60);
+
+  if (!matchActive) {
+    matchTimer = settings.matchDuration;
+    updateTimerDisplay();
+  }
+}
+
+function sendLobbySettings() {
+  if (!socket || !roomCode || matchActive) return;
+
+  const maxPlayersInput = document.getElementById('setting-max-players');
+  const minPlayersInput = document.getElementById('setting-min-players');
+  const matchMinutesInput = document.getElementById('setting-match-minutes');
+  const maxAllowed = Number.parseInt(maxPlayersInput.max, 10) || CONFIG.MAX_PLAYERS;
+  const currentPlayers = lobbyState ? lobbyState.playerCount : Object.keys(players).length;
+
+  const maxPlayers = clampNumber(maxPlayersInput.value, Math.max(1, currentPlayers), maxAllowed);
+  const minPlayers = clampNumber(minPlayersInput.value, 1, maxPlayers);
+  const matchMinutes = clampNumber(matchMinutesInput.value, 1, 15);
+
+  maxPlayersInput.value = maxPlayers;
+  minPlayersInput.value = minPlayers;
+  matchMinutesInput.value = matchMinutes;
+
+  socket.emit('update-room-settings', {
+    settings: {
+      maxPlayers,
+      minPlayers,
+      matchDuration: matchMinutes * 60
+    }
+  });
+}
+
+function renderLobbyPlayers(queuedPlayers) {
+  const list = document.getElementById('lobby-player-list');
+  list.replaceChildren();
+
+  if (!queuedPlayers.length) {
+    const empty = document.createElement('div');
+    empty.className = 'lobby-empty';
+    empty.textContent = 'Waiting for players...';
+    list.appendChild(empty);
+    return;
+  }
+
+  queuedPlayers.forEach(player => {
+    const entry = document.createElement('div');
+    entry.className = 'lobby-player';
+
+    const swatch = document.createElement('div');
+    swatch.className = 'lobby-player-swatch';
+    swatch.style.backgroundColor = player.color;
+
+    const name = document.createElement('div');
+    name.className = 'lobby-player-name';
+    name.textContent = `${player.colorName} Player`;
+
+    const slot = document.createElement('div');
+    slot.className = 'lobby-player-slot';
+    slot.textContent = `#${String(player.slot).padStart(2, '0')}`;
+
+    entry.append(swatch, name, slot);
+    list.appendChild(entry);
+  });
+}
+
+function updateLobbyStartState() {
+  const startButton = document.getElementById('start-game-btn');
+  const message = document.getElementById('start-game-message');
+  const status = document.getElementById('lobby-status');
+  const playerCount = lobbyState ? lobbyState.playerCount : Object.keys(players).length;
+  const minPlayers = lobbySettings.minPlayers || 1;
+  const maxPlayers = lobbySettings.maxPlayers || CONFIG.MAX_PLAYERS;
+
+  document.getElementById('lobby-player-count').textContent = `${playerCount}/${maxPlayers}`;
+
+  if (!roomCode) {
+    startButton.disabled = true;
+    message.textContent = 'Waiting for room code...';
+    status.textContent = 'Creating room...';
+    return;
+  }
+
+  if (matchActive) {
+    startButton.disabled = true;
+    message.textContent = 'Match running';
+    status.textContent = 'Match running';
+    return;
+  }
+
+  status.textContent = `${playerCount}/${maxPlayers} queued`;
+
+  if (playerCount < minPlayers) {
+    const needed = minPlayers - playerCount;
+    startButton.disabled = true;
+    message.textContent = `Need ${needed} more player${needed === 1 ? '' : 's'} to start`;
+    return;
+  }
+
+  startButton.disabled = false;
+  message.textContent = `${playerCount}/${maxPlayers} players ready`;
+}
+
 function updateLeaderboard() {
   const sorted = Object.values(players).sort((a, b) => b.kills - a.kills);
   
@@ -956,7 +1164,7 @@ function updateLeaderboard() {
 
 function updatePlayerCount() {
   document.getElementById('current-players').textContent = Object.keys(players).length;
-  document.getElementById('max-players').textContent = CONFIG.MAX_PLAYERS;
+  document.getElementById('max-players').textContent = lobbySettings.maxPlayers || CONFIG.MAX_PLAYERS;
 }
 
 function updateTimerDisplay() {

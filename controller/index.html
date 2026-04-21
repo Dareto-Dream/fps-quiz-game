@@ -110,6 +110,97 @@
       color: rgba(255, 255, 255, 0.5);
       margin-top: 5px;
     }
+
+    /* Lobby Wait Screen */
+    #lobby-wait-screen {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      background: linear-gradient(135deg, #081018 0%, #1a1a2e 100%);
+      padding: 24px;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .wait-box {
+      width: 100%;
+      max-width: 360px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: center;
+    }
+
+    .wait-box h1 {
+      color: #ff6600;
+      font-size: 24px;
+      margin-bottom: 18px;
+    }
+
+    #wait-room-code {
+      color: #ffcc00;
+      font-family: 'Courier New', monospace;
+      font-size: 48px;
+      font-weight: 900;
+      letter-spacing: 8px;
+      margin-bottom: 16px;
+    }
+
+    .wait-player {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    #wait-player-color {
+      width: 22px;
+      height: 22px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+    }
+
+    #wait-player-name {
+      font-size: 18px;
+      font-weight: bold;
+    }
+
+    .wait-stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .wait-stats div {
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 8px;
+      padding: 12px;
+    }
+
+    .wait-stats span {
+      display: block;
+      color: rgba(255, 255, 255, 0.55);
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .wait-stats strong {
+      color: #fff;
+      font-size: 18px;
+    }
+
+    #wait-status {
+      color: rgba(255, 255, 255, 0.68);
+      font-size: 14px;
+      min-height: 20px;
+    }
     
     /* Game Screen */
     #game-screen {
@@ -531,6 +622,29 @@
       <input type="text" id="room-code" placeholder="Room Code (4 digits)" maxlength="4" pattern="[0-9]{4}">
       <button id="connect-btn">CONNECT</button>
       <div id="connection-error"></div>
+    </div>
+  </div>
+
+  <!-- Lobby Wait Screen -->
+  <div id="lobby-wait-screen">
+    <div class="wait-box">
+      <h1>PLAYER QUEUE</h1>
+      <div id="wait-room-code">----</div>
+      <div class="wait-player">
+        <div id="wait-player-color"></div>
+        <div id="wait-player-name">Player</div>
+      </div>
+      <div class="wait-stats">
+        <div>
+          <span>Players</span>
+          <strong id="wait-player-count">0/0</strong>
+        </div>
+        <div>
+          <span>Match</span>
+          <strong id="wait-match-length">5 min</strong>
+        </div>
+      </div>
+      <div id="wait-status">Waiting for host...</div>
     </div>
   </div>
   

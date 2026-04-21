@@ -70,8 +70,8 @@ const overviewTarget = new THREE.Vector3(0, 0, 0);
 let audioContext;
 let sounds = {};
 
-// Clock for delta time
-const clock = new THREE.Clock();
+let simulationInterval = null;
+let lastSimulationAt = 0;
 
 // Raycaster for hit detection
 const raycaster = new THREE.Raycaster();
@@ -98,6 +98,7 @@ async function init() {
   
   // Start render loop
   animate();
+  startSimulationLoop();
 }
 
 function initThreeJS() {
@@ -615,10 +616,16 @@ function respawnPlayer(player) {
 // INPUT HANDLING
 // ============================================
 function applyPlayerInput(data) {
-  if (!matchActive) return;
-
   const player = players[data.playerId];
   if (!player || !player.alive) return;
+
+  if (!matchActive && lobbyState && lobbyState.state === 'playing') {
+    handleGameStarted({
+      settings: lobbyState.settings,
+      matchDuration: lobbyState.settings && lobbyState.settings.matchDuration,
+      startedAt: lobbyState.startedAt
+    });
+  }
 
   const now = Date.now();
   if (now - lastInputLogAt > 1000) {
@@ -998,6 +1005,14 @@ function handleLobbyState(data) {
   lobbyState = data;
   lobbySettings = data.settings || lobbySettings;
 
+  if (data.state === 'playing' && !matchActive) {
+    handleGameStarted({
+      settings: data.settings,
+      matchDuration: data.settings && data.settings.matchDuration,
+      startedAt: data.startedAt
+    });
+  }
+
   if (data.roomCode) {
     document.getElementById('lobby-room-code').textContent = data.roomCode;
   }
@@ -1010,8 +1025,10 @@ function handleLobbyState(data) {
 
 function handleGameStarted(data) {
   lobbySettings = data.settings || lobbySettings;
-  CONFIG.MATCH_DURATION = data.matchDuration || lobbySettings.matchDuration || CONFIG.MATCH_DURATION;
-  matchTimer = CONFIG.MATCH_DURATION;
+  const matchDuration = data.matchDuration || lobbySettings.matchDuration || CONFIG.MATCH_DURATION;
+  const elapsedSinceStart = data.startedAt ? Math.max(0, (Date.now() - data.startedAt) / 1000) : 0;
+  CONFIG.MATCH_DURATION = matchDuration;
+  matchTimer = Math.max(0, matchDuration - elapsedSinceStart);
   matchActive = true;
 
   document.body.classList.remove('lobby-active');
@@ -1341,18 +1358,26 @@ function onWindowResize() {
 // ============================================
 // ANIMATION LOOP
 // ============================================
+function startSimulationLoop() {
+  if (simulationInterval) return;
+
+  lastSimulationAt = performance.now();
+  simulationInterval = setInterval(() => {
+    const now = performance.now();
+    const deltaTime = Math.min((now - lastSimulationAt) / 1000, 1);
+    lastSimulationAt = now;
+    updateGame(deltaTime);
+  }, 1000 / 60);
+}
+
 function animate() {
   requestAnimationFrame(animate);
-  
-  const deltaTime = clock.getDelta();
   
   // Resume audio context on first interaction
   if (audioContext.state === 'suspended') {
     document.addEventListener('click', () => audioContext.resume(), { once: true });
   }
-  
-  updateGame(deltaTime);
-  
+
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
 }

@@ -12,6 +12,7 @@ let roomCode = '';
 let lobbyState = null;
 let inputInterval = null;
 let animationStarted = false;
+let matchStarted = false;
 
 // Player stats
 let myHealth = 100;
@@ -457,6 +458,14 @@ function showConnectionError(message) {
 function handleLobbyState(data) {
   lobbyState = data;
   updateLobbyWait(data);
+
+  if (data.state === 'playing' && !matchStarted) {
+    handleGameStarted({
+      settings: data.settings,
+      matchDuration: data.settings && data.settings.matchDuration,
+      startedAt: data.startedAt
+    });
+  }
 }
 
 function updateLobbyWait(data) {
@@ -482,6 +491,9 @@ function updateLobbyWait(data) {
 
 function handleGameStarted(data) {
   const duration = data.matchDuration || (data.settings && data.settings.matchDuration) || matchTime;
+  const elapsedSinceStart = data.startedAt ? Math.max(0, (Date.now() - data.startedAt) / 1000) : 0;
+
+  matchStarted = true;
 
   document.getElementById('lobby-wait-screen').style.display = 'none';
   document.getElementById('game-screen').style.display = 'block';
@@ -492,7 +504,7 @@ function handleGameStarted(data) {
   }
 
   clock = new THREE.Clock();
-  syncMatchTimer(duration);
+  syncMatchTimer(Math.max(0, duration - elapsedSinceStart));
   requestAnimationFrame(updateJoystickMetrics);
 
   if (!animationStarted) {

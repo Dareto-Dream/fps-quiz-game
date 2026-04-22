@@ -42,6 +42,7 @@ function validateMap(map, sourceName) {
   const id = validateId(map.id, sourceName);
   const name = typeof map.name === 'string' && map.name.trim() ? map.name.trim() : id;
   const arena = validateArena(map.arena, sourceName);
+  const lighting = validateLighting(map.lighting, sourceName);
   const spawns = validateSpawns(map.spawns, arena, sourceName);
   const obstacles = validateObstacles(map.obstacles || [], sourceName);
 
@@ -50,6 +51,7 @@ function validateMap(map, sourceName) {
     id,
     name,
     arena,
+    lighting,
     spawns,
     obstacles
   };
@@ -72,6 +74,23 @@ function validateArena(arena, sourceName) {
   const wallHeight = positiveNumber(arena.wallHeight, `${sourceName} arena.wallHeight`);
 
   return { width, depth, wallHeight };
+}
+
+function validateLighting(lighting, sourceName) {
+  if (lighting === undefined) return {};
+  if (!lighting || typeof lighting !== 'object' || Array.isArray(lighting)) {
+    throw new Error(`${sourceName} lighting must be an object`);
+  }
+
+  const next = { ...lighting };
+  if (next.timeOfDay !== undefined) {
+    if (typeof next.timeOfDay !== 'string' || !next.timeOfDay.trim()) {
+      throw new Error(`${sourceName} lighting.timeOfDay must be a non-empty string`);
+    }
+    next.timeOfDay = next.timeOfDay.trim().toLowerCase();
+  }
+
+  return next;
 }
 
 function validateSpawns(spawns, arena, sourceName) {

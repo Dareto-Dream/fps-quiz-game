@@ -159,6 +159,7 @@ function getFallbackMap() {
     id: 'classic',
     name: 'Classic Arena',
     arena: { width: 50, depth: 50, wallHeight: 10 },
+    lighting: { timeOfDay: 'midday' },
     spawns: [{ x: 0, z: 0, yaw: 0 }],
     obstacles: []
   };
@@ -642,18 +643,6 @@ function initThreeJS() {
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.08;
   
-  // Lighting
-  const ambientLight = new THREE.AmbientLight(0x6b5a43, 0.52);
-  scene.add(ambientLight);
-  
-  const directionalLight = new THREE.DirectionalLight(0xffead0, 1.04);
-  directionalLight.position.set(18, 40, 22);
-  scene.add(directionalLight);
-
-  const rimLight = new THREE.DirectionalLight(0x26d8d8, 0.42);
-  rimLight.position.set(-22, 22, -18);
-  scene.add(rimLight);
-  
   // Add camera to scene (so gun renders)
   scene.add(camera);
   
@@ -669,6 +658,7 @@ function createArena() {
   mapRuntime = buildMapScene({
     THREE,
     scene,
+    renderer,
     map: activeMap,
     shadows: false,
     lightIntensity: 0.5

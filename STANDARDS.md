@@ -62,12 +62,15 @@ Use this shape:
     "wallHeight": 10
   },
   "style": {
-    "floorColor": "#111312",
-    "wallColor": "#202322",
-    "obstacleColor": "#3a3325",
+    "floorColor": "#38443d",
+    "wallColor": "#5e665d",
+    "obstacleColor": "#796a4f",
     "accentColor": "#26d8d8",
-    "gridColor": "#ffb23f",
-    "gridSecondaryColor": "#27302f"
+    "gridColor": "#ffd166",
+    "gridSecondaryColor": "#607069"
+  },
+  "lighting": {
+    "timeOfDay": "midday"
   },
   "spawns": [
     { "x": -20, "z": -20, "yaw": 0.75 }
@@ -123,6 +126,20 @@ Coordinate conventions:
 - `gridSecondaryColor`
 
 Use CSS-style hex colors such as `#26d8d8`. Invalid or missing colors fall back to renderer defaults.
+
+### Lighting
+
+`lighting` is optional. It controls scene atmosphere and map-owned lights for both host and controller views.
+
+- `timeOfDay`: optional preset name. Supported presets are `morning`, `midday`, `evening`, and `night`. If omitted or unknown, the renderer uses `midday`.
+- `skyColor`, `fogColor`, `ambientColor`, `hemisphereSkyColor`, `hemisphereGroundColor`, `sunColor`, `fillColor`: optional CSS-style hex colors.
+- `fog`: optional boolean. Set to `false` to disable fog for the map.
+- `fogNear`, `fogFar`, `toneMappingExposure`: optional positive numbers.
+- `ambientIntensity`, `hemisphereIntensity`, `sunIntensity`, `fillIntensity`, `arenaLightIntensity`, `arenaLightDistance`: optional non-negative numbers.
+- `sunPosition` and `fillPosition`: optional objects with finite `x`, `y`, and `z` numbers.
+- `arenaLightColors`: optional array of CSS-style hex colors used by generated corner accent lights.
+
+Prefer setting `timeOfDay` first and only overriding individual values when a map needs a distinct mood or readability adjustment.
 
 ### Spawns
 

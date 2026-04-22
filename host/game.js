@@ -166,6 +166,7 @@ function getFallbackMap() {
     id: 'classic',
     name: 'Classic Arena',
     arena: { width: 50, depth: 50, wallHeight: 10 },
+    lighting: { timeOfDay: 'midday' },
     spawns: CONFIG.SPAWN_POINTS || [{ x: 0, z: 0, yaw: 0 }],
     obstacles: []
   };
@@ -201,27 +202,6 @@ function initThreeJS() {
   labelRenderer.domElement.style.top = '0';
   labelRenderer.domElement.style.pointerEvents = 'none';
   document.getElementById('game-container').appendChild(labelRenderer.domElement);
-  
-  // Lighting
-  const ambientLight = new THREE.AmbientLight(0x6b5a43, 0.52);
-  scene.add(ambientLight);
-  
-  const directionalLight = new THREE.DirectionalLight(0xffead0, 1.18);
-  directionalLight.position.set(18, 42, 22);
-  directionalLight.castShadow = true;
-  directionalLight.shadow.mapSize.width = 2048;
-  directionalLight.shadow.mapSize.height = 2048;
-  directionalLight.shadow.camera.near = 0.5;
-  directionalLight.shadow.camera.far = 100;
-  directionalLight.shadow.camera.left = -40;
-  directionalLight.shadow.camera.right = 40;
-  directionalLight.shadow.camera.top = 40;
-  directionalLight.shadow.camera.bottom = -40;
-  scene.add(directionalLight);
-
-  const rimLight = new THREE.DirectionalLight(0x26d8d8, 0.48);
-  rimLight.position.set(-24, 24, -18);
-  scene.add(rimLight);
   
   // Handle resize
   window.addEventListener('resize', onWindowResize);
@@ -438,6 +418,7 @@ function createArena() {
   mapRuntime = buildMapScene({
     THREE,
     scene,
+    renderer,
     map: activeMap,
     shadows: true,
     lightIntensity: 0.55

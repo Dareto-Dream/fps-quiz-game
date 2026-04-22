@@ -1,11 +1,98 @@
 function colorValue(THREE, value, fallback) {
-  if (!value) return fallback;
+  const target = value || fallback;
   try {
-    return new THREE.Color(value);
+    return target && target.isColor ? target : new THREE.Color(target);
   } catch {
-    return fallback;
+    try {
+      return fallback && fallback.isColor ? fallback : new THREE.Color(fallback);
+    } catch {
+      return fallback;
+    }
   }
 }
+
+const TIME_OF_DAY_PRESETS = {
+  morning: {
+    skyColor: '#b9dfff',
+    fogColor: '#cfe7f2',
+    fogNear: 58,
+    fogFar: 150,
+    toneMappingExposure: 1.22,
+    ambientColor: '#fff2dd',
+    ambientIntensity: 0.95,
+    hemisphereSkyColor: '#d8ecff',
+    hemisphereGroundColor: '#6d6652',
+    hemisphereIntensity: 0.62,
+    sunColor: '#ffe0a3',
+    sunIntensity: 1.75,
+    sunPosition: { x: -32, y: 28, z: -18 },
+    fillColor: '#b9dcff',
+    fillIntensity: 0.28,
+    fillPosition: { x: 30, y: 22, z: 24 },
+    arenaLightIntensity: 0.28,
+    arenaLightDistance: 24
+  },
+  midday: {
+    skyColor: '#8fcfff',
+    fogColor: '#c8e7f8',
+    fogNear: 72,
+    fogFar: 190,
+    toneMappingExposure: 1.35,
+    ambientColor: '#f1f8ff',
+    ambientIntensity: 1.08,
+    hemisphereSkyColor: '#d8f3ff',
+    hemisphereGroundColor: '#756b5c',
+    hemisphereIntensity: 0.78,
+    sunColor: '#fff4d2',
+    sunIntensity: 2.35,
+    sunPosition: { x: 12, y: 64, z: 10 },
+    fillColor: '#c8e5ff',
+    fillIntensity: 0.38,
+    fillPosition: { x: -30, y: 24, z: -22 },
+    arenaLightIntensity: 0.22,
+    arenaLightDistance: 24
+  },
+  evening: {
+    skyColor: '#6e8fb5',
+    fogColor: '#9b8b79',
+    fogNear: 50,
+    fogFar: 130,
+    toneMappingExposure: 1.18,
+    ambientColor: '#d7c1a4',
+    ambientIntensity: 0.78,
+    hemisphereSkyColor: '#a9c1de',
+    hemisphereGroundColor: '#5c4c3d',
+    hemisphereIntensity: 0.52,
+    sunColor: '#ffb36e',
+    sunIntensity: 1.55,
+    sunPosition: { x: 38, y: 20, z: 10 },
+    fillColor: '#8db9ff',
+    fillIntensity: 0.24,
+    fillPosition: { x: -24, y: 18, z: -26 },
+    arenaLightIntensity: 0.45,
+    arenaLightDistance: 24
+  },
+  night: {
+    skyColor: '#101827',
+    fogColor: '#111723',
+    fogNear: 34,
+    fogFar: 95,
+    toneMappingExposure: 1.1,
+    ambientColor: '#6f86aa',
+    ambientIntensity: 0.42,
+    hemisphereSkyColor: '#7894c7',
+    hemisphereGroundColor: '#1b1f20',
+    hemisphereIntensity: 0.38,
+    sunColor: '#b9ccff',
+    sunIntensity: 0.38,
+    sunPosition: { x: -18, y: 40, z: 18 },
+    fillColor: '#26d8d8',
+    fillIntensity: 0.22,
+    fillPosition: { x: 24, y: 24, z: -18 },
+    arenaLightIntensity: 0.88,
+    arenaLightDistance: 26
+  }
+};
 
 export function getArenaConfig(map) {
   const arena = (map && map.arena) || {};
@@ -19,7 +106,7 @@ export function getArenaConfig(map) {
   };
 }
 
-export function buildMapScene({ THREE, scene, map, shadows = false, lightIntensity = 0.55 } = {}) {
+export function buildMapScene({ THREE, scene, renderer, map, shadows = false, lightIntensity = 0.55 } = {}) {
   if (!THREE || !scene) {
     throw new Error('buildMapScene requires THREE and scene');
   }
@@ -27,8 +114,11 @@ export function buildMapScene({ THREE, scene, map, shadows = false, lightIntensi
   const activeMap = map || createFallbackMap();
   const { WIDTH, DEPTH, WALL_HEIGHT } = getArenaConfig(activeMap);
   const style = activeMap.style || {};
+  const lighting = resolveLightingConfig(activeMap.lighting, lightIntensity);
   const group = new THREE.Group();
   group.name = `map-${activeMap.id || 'arena'}`;
+
+  configureSceneLighting({ THREE, scene, renderer, group, lighting, shadows, width: WIDTH, depth: DEPTH });
 
   const floorMaterial = new THREE.MeshStandardMaterial({
     color: colorValue(THREE, style.floorColor, 0x111312),
@@ -95,16 +185,7 @@ export function buildMapScene({ THREE, scene, map, shadows = false, lightIntensi
   westWall.position.x = -WIDTH / 2 - wallThickness / 2;
   group.add(westWall);
 
-  [
-    [-WIDTH / 2 + 4, 3, -DEPTH / 2 + 4],
-    [WIDTH / 2 - 4, 3, -DEPTH / 2 + 4],
-    [-WIDTH / 2 + 4, 3, DEPTH / 2 - 4],
-    [WIDTH / 2 - 4, 3, DEPTH / 2 - 4]
-  ].forEach(([x, y, z], index) => {
-    const light = new THREE.PointLight(index % 2 === 0 ? 0xffb23f : 0x26d8d8, lightIntensity, 18, 1.7);
-    light.position.set(x, y, z);
-    group.add(light);
-  });
+  addArenaAccentLights({ THREE, group, lighting, width: WIDTH, depth: DEPTH });
 
   const obstacleMeshes = [];
   const shotBlockers = [];
@@ -151,6 +232,137 @@ export function buildMapScene({ THREE, scene, map, shadows = false, lightIntensi
   };
 }
 
+function resolveLightingConfig(lighting = {}, fallbackLightIntensity = 0.55) {
+  const timeOfDay = typeof lighting.timeOfDay === 'string'
+    ? lighting.timeOfDay.toLowerCase()
+    : 'midday';
+  const preset = TIME_OF_DAY_PRESETS[timeOfDay] || TIME_OF_DAY_PRESETS.midday;
+  return {
+    ...preset,
+    ...lighting,
+    timeOfDay,
+    ambientIntensity: numberValue(lighting.ambientIntensity, preset.ambientIntensity, 0),
+    hemisphereIntensity: numberValue(lighting.hemisphereIntensity, preset.hemisphereIntensity, 0),
+    sunIntensity: numberValue(lighting.sunIntensity, preset.sunIntensity, 0),
+    fillIntensity: numberValue(lighting.fillIntensity, preset.fillIntensity, 0),
+    arenaLightIntensity: numberValue(lighting.arenaLightIntensity, preset.arenaLightIntensity ?? fallbackLightIntensity, 0),
+    arenaLightDistance: numberValue(lighting.arenaLightDistance, preset.arenaLightDistance, 0),
+    fogNear: numberValue(lighting.fogNear, preset.fogNear, 0),
+    fogFar: numberValue(lighting.fogFar, preset.fogFar, 1),
+    toneMappingExposure: numberValue(lighting.toneMappingExposure, preset.toneMappingExposure, 0.1),
+    sunPosition: vectorValue(lighting.sunPosition, preset.sunPosition),
+    fillPosition: vectorValue(lighting.fillPosition, preset.fillPosition)
+  };
+}
+
+function numberValue(value, fallback, min = -Number.MAX_SAFE_INTEGER, max = Number.MAX_SAFE_INTEGER) {
+  const numeric = Number(value);
+  const target = Number.isFinite(numeric) ? numeric : fallback;
+  return Math.max(min, Math.min(max, target));
+}
+
+function vectorValue(value, fallback) {
+  const source = value && typeof value === 'object' ? value : fallback;
+  return {
+    x: numberValue(source && source.x, fallback.x),
+    y: numberValue(source && source.y, fallback.y),
+    z: numberValue(source && source.z, fallback.z)
+  };
+}
+
+function configureSceneLighting({ THREE, scene, renderer, group, lighting, shadows, width, depth }) {
+  scene.background = colorValue(THREE, lighting.skyColor, 0x8fcfff);
+
+  if (lighting.fog === false) {
+    scene.fog = null;
+  } else {
+    const fogNear = Math.min(lighting.fogNear, lighting.fogFar - 1);
+    scene.fog = new THREE.Fog(
+      colorValue(THREE, lighting.fogColor, lighting.skyColor || 0xc8e7f8),
+      fogNear,
+      lighting.fogFar
+    );
+  }
+
+  if (renderer && Number.isFinite(lighting.toneMappingExposure)) {
+    renderer.toneMappingExposure = lighting.toneMappingExposure;
+  }
+
+  if (lighting.ambientIntensity > 0) {
+    group.add(new THREE.AmbientLight(
+      colorValue(THREE, lighting.ambientColor, 0xf1f8ff),
+      lighting.ambientIntensity
+    ));
+  }
+
+  if (lighting.hemisphereIntensity > 0) {
+    group.add(new THREE.HemisphereLight(
+      colorValue(THREE, lighting.hemisphereSkyColor, lighting.skyColor || 0xd8f3ff),
+      colorValue(THREE, lighting.hemisphereGroundColor, 0x756b5c),
+      lighting.hemisphereIntensity
+    ));
+  }
+
+  if (lighting.sunIntensity > 0) {
+    const sun = new THREE.DirectionalLight(
+      colorValue(THREE, lighting.sunColor, 0xfff4d2),
+      lighting.sunIntensity
+    );
+    sun.position.set(lighting.sunPosition.x, lighting.sunPosition.y, lighting.sunPosition.z);
+    sun.target.position.set(0, 0, 0);
+    configureDirectionalShadow(sun, shadows, Math.max(width, depth));
+    group.add(sun);
+    group.add(sun.target);
+  }
+
+  if (lighting.fillIntensity > 0) {
+    const fill = new THREE.DirectionalLight(
+      colorValue(THREE, lighting.fillColor, 0xc8e5ff),
+      lighting.fillIntensity
+    );
+    fill.position.set(lighting.fillPosition.x, lighting.fillPosition.y, lighting.fillPosition.z);
+    group.add(fill);
+  }
+}
+
+function configureDirectionalShadow(light, enabled, mapSize) {
+  light.castShadow = enabled;
+  if (!enabled) return;
+
+  const shadowExtent = Math.max(30, mapSize * 0.72);
+  light.shadow.mapSize.width = 2048;
+  light.shadow.mapSize.height = 2048;
+  light.shadow.camera.near = 0.5;
+  light.shadow.camera.far = 160;
+  light.shadow.camera.left = -shadowExtent;
+  light.shadow.camera.right = shadowExtent;
+  light.shadow.camera.top = shadowExtent;
+  light.shadow.camera.bottom = -shadowExtent;
+}
+
+function addArenaAccentLights({ THREE, group, lighting, width, depth }) {
+  if (lighting.arenaLightIntensity <= 0 || lighting.arenaLightDistance <= 0) return;
+
+  const colors = Array.isArray(lighting.arenaLightColors) && lighting.arenaLightColors.length > 0
+    ? lighting.arenaLightColors
+    : ['#ffb23f', '#26d8d8'];
+  [
+    [-width / 2 + 4, 3.25, -depth / 2 + 4],
+    [width / 2 - 4, 3.25, -depth / 2 + 4],
+    [-width / 2 + 4, 3.25, depth / 2 - 4],
+    [width / 2 - 4, 3.25, depth / 2 - 4]
+  ].forEach(([x, y, z], index) => {
+    const light = new THREE.PointLight(
+      colorValue(THREE, colors[index % colors.length], 0xffffff),
+      lighting.arenaLightIntensity,
+      lighting.arenaLightDistance,
+      1.5
+    );
+    light.position.set(x, y, z);
+    group.add(light);
+  });
+}
+
 export function disposeMapScene(runtime) {
   if (!runtime || !runtime.group) return;
 
@@ -185,6 +397,7 @@ function createFallbackMap() {
     id: 'fallback',
     name: 'Fallback Arena',
     arena: { width: 50, depth: 50, wallHeight: 10 },
+    lighting: { timeOfDay: 'midday' },
     spawns: [{ x: 0, z: 0, yaw: 0 }],
     obstacles: []
   };

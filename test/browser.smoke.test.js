@@ -97,6 +97,79 @@ async function startServer(t) {
   };
 }
 
+async function assertControllerQuizFitsViewport(page) {
+  const questions = [
+    '1. What is the highest-grossing film of all time as of recent records, with enough extra wording to stress a narrow phone screen?',
+    '2. Which very long technology phrase should wrap cleanly instead of cutting off inside the controller reload quiz modal?',
+    '3. What planet is known as the Red Planet when this question is intentionally padded to test mobile wrapping behavior?'
+  ];
+  const options = [
+    'A very long answer option that should wrap across multiple lines without clipping',
+    'Short answer',
+    'Another long answer choice with punctuation, spaces, and enough words to stress the button layout',
+    'Final answer'
+  ];
+
+  await page.evaluate(({ questions, options }) => {
+    const container = document.getElementById('quiz-questions');
+    container.replaceChildren();
+
+    questions.forEach((text, qIndex) => {
+      const question = document.createElement('div');
+      question.className = 'quiz-question';
+
+      const questionText = document.createElement('div');
+      questionText.className = 'question-text';
+      questionText.textContent = text;
+      question.appendChild(questionText);
+
+      options.forEach((optionText, optIndex) => {
+        const button = document.createElement('button');
+        button.className = 'quiz-option';
+        button.id = `quiz-opt-${qIndex}-${optIndex}`;
+        button.textContent = `${String.fromCharCode(65 + optIndex)}. ${optionText}`;
+        question.appendChild(button);
+      });
+
+      container.appendChild(question);
+    });
+
+    document.getElementById('submit-quiz-btn').disabled = true;
+    document.getElementById('quiz-modal').style.display = 'flex';
+  }, { questions, options });
+
+  const layout = await page.evaluate(() => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    const panel = document.querySelector('.quiz-container').getBoundingClientRect();
+    const submit = document.getElementById('submit-quiz-btn').getBoundingClientRect();
+    const scroller = document.getElementById('quiz-questions');
+    const textOverflowsPanel = Array.from(document.querySelectorAll('.question-text, .quiz-option')).some(el => {
+      const rect = el.getBoundingClientRect();
+      return rect.left < panel.left - 0.5 || rect.right > panel.right + 0.5;
+    });
+
+    return {
+      panelInsideViewport:
+        panel.top >= -0.5 &&
+        panel.left >= -0.5 &&
+        panel.right <= viewport.width + 0.5 &&
+        panel.bottom <= viewport.height + 0.5,
+      submitInsideViewport:
+        submit.top >= -0.5 &&
+        submit.left >= -0.5 &&
+        submit.right <= viewport.width + 0.5 &&
+        submit.bottom <= viewport.height + 0.5,
+      scrollerCanContainOverflow: scroller.scrollHeight > scroller.clientHeight,
+      textOverflowsPanel
+    };
+  });
+
+  assert.equal(layout.panelInsideViewport, true);
+  assert.equal(layout.submitInsideViewport, true);
+  assert.equal(layout.scrollerCanContainOverflow, true);
+  assert.equal(layout.textOverflowsPanel, false);
+}
+
 test('host and controller pages load, connect, and start a match without browser errors', { timeout: 40000 }, async t => {
   const executablePath = getBrowserPath();
   if (!executablePath) {
@@ -156,6 +229,7 @@ test('host and controller pages load, connect, and start a match without browser
   const controllerCanvas = await controllerPage.locator('#game-canvas').boundingBox();
   assert.ok(hostCanvas && hostCanvas.width > 0 && hostCanvas.height > 0);
   assert.ok(controllerCanvas && controllerCanvas.width > 0 && controllerCanvas.height > 0);
+  await assertControllerQuizFitsViewport(controllerPage);
 
   await hostPage.screenshot();
   await controllerPage.screenshot();

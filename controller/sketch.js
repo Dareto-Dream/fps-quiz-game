@@ -97,6 +97,7 @@ let mapRuntime = null;
 // INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
+  syncViewportHeight();
   loadClientConfig();
 
   document.getElementById('server-url').value = PUBLIC_SERVER_URL;
@@ -119,7 +120,13 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Joystick touch events
   setupJoysticks();
+  window.addEventListener('resize', syncViewportHeight);
+  window.addEventListener('orientationchange', syncViewportHeight);
 });
+
+function syncViewportHeight() {
+  document.documentElement.style.setProperty('--app-height', `${window.innerHeight}px`);
+}
 
 async function loadClientConfig() {
   try {
@@ -979,11 +986,13 @@ function handlePlayerRespawned(data) {
 }
 
 function handleQuizQuestions(data) {
-  quizQuestions = data.questions;
+  quizQuestions = Array.isArray(data.questions) ? data.questions : [];
   quizAnswers = new Array(quizQuestions.length).fill(-1);
   quizActive = true;
   renderQuiz();
+  document.getElementById('submit-quiz-btn').disabled = true;
   document.getElementById('quiz-modal').style.display = 'flex';
+  requestAnimationFrame(resetQuizScroll);
 }
 
 function handleAmmoUpdated(data) {
@@ -1119,6 +1128,13 @@ function renderQuiz() {
     
     container.appendChild(questionDiv);
   });
+}
+
+function resetQuizScroll() {
+  const container = document.getElementById('quiz-questions');
+  const panel = document.querySelector('.quiz-container');
+  if (container) container.scrollTop = 0;
+  if (panel) panel.scrollTop = 0;
 }
 
 function selectQuizOption(questionIndex, optionIndex) {

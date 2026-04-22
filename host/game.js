@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { applyArenaMovement, sanitizePlayerInput } from '../shared/movement.mjs';
 
 // ============================================
 // GAME CONFIGURATION
@@ -638,8 +639,7 @@ function respawnPlayer(player) {
   player.spawnProtection = CONFIG.SPAWN_PROTECTION_TIME;
   player.group.visible = true;
   
-  // Notify controller - use event name that matches client listener
-  socket.emit('player-respawned', {
+  socket.emit('player-respawn', {
     playerId: player.id,
     health: player.health,
     ammo: player.ammo
@@ -651,9 +651,11 @@ function respawnPlayer(player) {
 // ============================================
 // INPUT HANDLING
 // ============================================
-function applyPlayerInput(data) {
+function applyPlayerInput(data = {}) {
+  if (!data.playerId) return;
   const player = players[data.playerId];
   if (!player || !player.alive) return;
+  const input = sanitizePlayerInput(data);
 
   if (!matchActive && lobbyState && lobbyState.state === 'playing') {
     handleGameStarted({
@@ -668,20 +670,19 @@ function applyPlayerInput(data) {
     lastInputLogAt = now;
     console.log('[host] input', {
       playerId: data.playerId,
-      moveX: Number((data.moveX || 0).toFixed(2)),
-      moveY: Number((data.moveY || 0).toFixed(2)),
-      lookDeltaX: Number((data.lookDeltaX || 0).toFixed(3)),
-      lookDeltaY: Number((data.lookDeltaY || 0).toFixed(3)),
-      shoot: Boolean(data.shoot)
+      moveX: Number(input.moveX.toFixed(2)),
+      moveY: Number(input.moveY.toFixed(2)),
+      lookDeltaX: Number(input.lookDeltaX.toFixed(3)),
+      lookDeltaY: Number(input.lookDeltaY.toFixed(3)),
+      shoot: input.shoot
     });
   }
   
-  // Store input for processing in update loop - use direct assignment for responsiveness
-  player.lastInput.moveX = data.moveX || 0;
-  player.lastInput.moveY = data.moveY || 0;
-  player.lastInput.lookDeltaX = data.lookDeltaX || 0;
-  player.lastInput.lookDeltaY = data.lookDeltaY || 0;
-  player.lastInput.shoot = data.shoot || false;
+  player.lastInput.moveX = input.moveX;
+  player.lastInput.moveY = input.moveY;
+  player.lastInput.lookDeltaX = input.lookDeltaX;
+  player.lastInput.lookDeltaY = input.lookDeltaY;
+  player.lastInput.shoot = input.shoot;
 }
 
 // ============================================
@@ -738,42 +739,19 @@ function updateAlivePlayer(player, deltaTime) {
   
   // Calculate movement using UPDATED rotation
   if (Math.abs(player.lastInput.moveX) > 0.001 || Math.abs(player.lastInput.moveY) > 0.001) {
-    const moveSpeed = CONFIG.MOVE_SPEED * deltaTime;
-    
-    // Calculate direction vectors relative to player's CURRENT rotation
-    const forward = new THREE.Vector3(
-      Math.sin(player.rotation.y),
-      0,
-      Math.cos(player.rotation.y)
-    );
-    
-    const right = new THREE.Vector3(
-      Math.cos(player.rotation.y),
-      0,
-      -Math.sin(player.rotation.y)
-    );
-    
-    // Create movement vector
-    const movement = new THREE.Vector3();
-    movement.addScaledVector(forward, player.lastInput.moveY * moveSpeed);  // Forward/backward
-    movement.addScaledVector(right, player.lastInput.moveX * moveSpeed);     // Left/right
-    
-    // Get current position from group
-    const currentX = player.group.position.x;
-    const currentZ = player.group.position.z;
-    
-    // Calculate new position
-    let newX = currentX + movement.x;
-    let newZ = currentZ + movement.z;
-    
-    // Boundary collision
-    const boundary = CONFIG.ARENA.WIDTH / 2 - 1;
-    newX = Math.max(-boundary, Math.min(boundary, newX));
-    newZ = Math.max(-boundary, Math.min(boundary, newZ));
-    
-    // DIRECTLY set the group position
-    player.group.position.x = newX;
-    player.group.position.z = newZ;
+    const nextPosition = applyArenaMovement({
+      x: player.group.position.x,
+      z: player.group.position.z,
+      rotationY: player.rotation.y,
+      moveX: player.lastInput.moveX,
+      moveY: player.lastInput.moveY,
+      speed: CONFIG.MOVE_SPEED,
+      deltaTime,
+      arena: CONFIG.ARENA
+    });
+
+    player.group.position.x = nextPosition.x;
+    player.group.position.z = nextPosition.z;
   }
   
   // Handle shooting
@@ -919,7 +897,6 @@ function handleKill(killer, victim) {
   // Add kill to feed
   addKillFeed(killer.colorName, victim.colorName, killer.color, victim.color);
   
-  // Emit events - use event names that match client listeners
   socket.emit('kill-event', {
     killerId: killer.id,
     victimId: victim.id,
@@ -927,9 +904,8 @@ function handleKill(killer, victim) {
     timestamp: Date.now()
   });
   
-  // Client expects 'player-died' with 'playerId' field
-  socket.emit('player-died', {
-    playerId: victim.id,
+  socket.emit('player-death', {
+    victimId: victim.id,
     killerId: killer.id,
     killerName: killer.colorName,
     respawnTime: CONFIG.RESPAWN_TIME
@@ -949,8 +925,7 @@ function handleQuizCompleted(data) {
   const reward = CONFIG.QUIZ_REWARDS[data.correctCount] || 0;
   player.ammo = Math.min(player.ammo + reward, CONFIG.PLAYER_MAX_AMMO);
   
-  // Notify controller - use event name that matches client listener
-  socket.emit('ammo-updated', {
+  socket.emit('ammo-update', {
     playerId: data.playerId,
     ammo: player.ammo,
     ammoGained: reward
@@ -1376,6 +1351,11 @@ function restartMatch() {
   matchTimer = CONFIG.MATCH_DURATION;
   matchActive = true;
   streakLeader = null;
+  socket.emit('restart-game', {
+    settings: lobbySettings,
+    matchDuration: CONFIG.MATCH_DURATION,
+    startedAt: Date.now()
+  });
   
   updateLeaderboard();
   updateStreakLeader();

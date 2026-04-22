@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyArenaMovement } from '../shared/movement.mjs';
 
 // ============================================
 // GAME STATE
@@ -27,6 +28,7 @@ let matchTimeBase = 300;
 let matchSyncAt = 0;
 let matchTimerActive = false;
 let lastTimerWholeSeconds = null;
+let moveSpeed = 8;
 
 // Player position/rotation (synced from host)
 let myPosition = new THREE.Vector3(0, 0, 0);
@@ -70,6 +72,8 @@ const ARENA = { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 };
 // INITIALIZATION
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
+  loadClientConfig();
+
   // Auto-fill server URL from current page URL (works for hosted servers)
   const currentUrl = window.location.origin;
   if (currentUrl) {
@@ -95,6 +99,17 @@ document.addEventListener('DOMContentLoaded', function() {
   // Joystick touch events
   setupJoysticks();
 });
+
+async function loadClientConfig() {
+  try {
+    const response = await fetch('/api/config');
+    const serverConfig = await response.json();
+    moveSpeed = Number(serverConfig.MOVE_SPEED) || moveSpeed;
+    Object.assign(ARENA, serverConfig.ARENA || {});
+  } catch (error) {
+    console.log('Using default controller config');
+  }
+}
 
 function startFiring() {
   shooting = true;
@@ -363,7 +378,7 @@ function connectToServer() {
   
   // Ensure URL has protocol
   if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
-    serverUrl = 'https://' + serverUrl;
+    serverUrl = 'http://' + serverUrl;
   }
   
   // Remove trailing slash if present
@@ -427,6 +442,7 @@ function connectToServer() {
     showConnectionError(data.message);
     document.getElementById('connect-btn').disabled = false;
     document.getElementById('connect-btn').textContent = 'CONNECT';
+    socket.disconnect();
   });
   
   socket.on('connect_error', (error) => {
@@ -434,6 +450,10 @@ function connectToServer() {
     showConnectionError(`Connection failed: ${error.message || 'Cannot reach server'}`);
     document.getElementById('connect-btn').disabled = false;
     document.getElementById('connect-btn').textContent = 'CONNECT';
+  });
+
+  socket.on('disconnect', () => {
+    connected = false;
   });
   
   // Game events
@@ -584,6 +604,7 @@ function createArena() {
     roughness: 0.74,
     metalness: 0.18
   });
+
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
@@ -1029,12 +1050,11 @@ function selectQuizOption(questionIndex, optionIndex) {
 function submitQuiz() {
   if (!quizActive) return;
   
-  let correctCount = 0;
-  quizQuestions.forEach((q, i) => {
-    if (quizAnswers[i] === q.correct) correctCount++;
-  });
-  
-  socket.emit('submit-quiz', { answers: quizAnswers, correctCount: correctCount });
+  const answers = quizQuestions.map((q, i) => ({
+    questionId: q.id,
+    selectedOption: quizAnswers[i]
+  }));
+  socket.emit('submit-quiz', { answers });
   
   quizActive = false;
   document.getElementById('quiz-modal').style.display = 'none';
@@ -1126,40 +1146,19 @@ function animate() {
   // Client-side prediction: move camera based on input for responsive feel
   // Server position updates will be smoothly interpolated in handleFullState
   if (isAlive && (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001)) {
-    const moveSpeed = 8 * delta; // Match server CONFIG.MOVE_SPEED
-    
-    // Calculate movement direction based on camera's current rotation
-    const forward = new THREE.Vector3(
-      Math.sin(camera.rotation.y),
-      0,
-      Math.cos(camera.rotation.y)
-    );
-    
-    const right = new THREE.Vector3(
-      Math.cos(camera.rotation.y),
-      0,
-      -Math.sin(camera.rotation.y)
-    );
-    
-    // Calculate movement vector
-    const movement = new THREE.Vector3();
-    movement.addScaledVector(right, moveX);
-    movement.addScaledVector(forward, moveY);
-    
-    if (movement.length() > 0) {
-      movement.normalize();
-      movement.multiplyScalar(moveSpeed);
-      
-      // Apply movement to camera position
-      camera.position.x += movement.x;
-      camera.position.z += movement.z;
-      
-      // Clamp to arena bounds
-      const halfWidth = ARENA.WIDTH / 2 - 1;
-      const halfDepth = ARENA.DEPTH / 2 - 1;
-      camera.position.x = Math.max(-halfWidth, Math.min(halfWidth, camera.position.x));
-      camera.position.z = Math.max(-halfDepth, Math.min(halfDepth, camera.position.z));
-    }
+    const nextPosition = applyArenaMovement({
+      x: camera.position.x,
+      z: camera.position.z,
+      rotationY: camera.rotation.y,
+      moveX,
+      moveY,
+      speed: moveSpeed,
+      deltaTime: delta,
+      arena: ARENA
+    });
+
+    camera.position.x = nextPosition.x;
+    camera.position.z = nextPosition.z;
   }
   
   renderer.render(scene, camera);

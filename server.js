@@ -23,6 +23,7 @@ const io = new Server(server, {
 const MAX_ROOM_PLAYERS = Math.min(config.MAX_PLAYERS, config.PLAYER_COLORS.length);
 const MIN_MATCH_DURATION = 60;
 const MAX_MATCH_DURATION = 900;
+const SERVER_PORT = parsePort(process.env.PORT, config.SERVER_PORT);
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
@@ -116,6 +117,10 @@ app.get('/controller', (req, res) => {
   res.sendFile(path.join(__dirname, 'controller', 'index.html'));
 });
 
+app.get('/favicon.ico', (req, res) => {
+  res.status(204).end();
+});
+
 // API endpoint to get config for clients
 app.get('/api/config', (req, res) => {
   res.json({
@@ -146,6 +151,43 @@ function clampInt(value, min, max, fallback) {
   const parsed = Number.parseInt(value, 10);
   const target = Number.isFinite(parsed) ? parsed : fallback;
   return Math.max(min, Math.min(max, target));
+}
+
+function parsePort(value, fallback) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 65535 ? parsed : fallback;
+}
+
+function clampNumber(value, min, max, fallback = 0) {
+  const parsed = Number(value);
+  const target = Number.isFinite(parsed) ? parsed : fallback;
+  return Math.max(min, Math.min(max, target));
+}
+
+function sanitizePlayerInput(data = {}) {
+  return {
+    moveX: clampNumber(data.moveX, -1, 1, 0),
+    moveY: clampNumber(data.moveY, -1, 1, 0),
+    lookDeltaX: clampNumber(data.lookDeltaX, -1, 1, 0),
+    lookDeltaY: clampNumber(data.lookDeltaY, -1, 1, 0),
+    shoot: Boolean(data.shoot),
+    jump: Boolean(data.jump),
+    timestamp: Number.isFinite(Number(data.timestamp)) ? Number(data.timestamp) : Date.now()
+  };
+}
+
+function isHostForRoom(socket) {
+  const room = socket.roomCode && rooms[socket.roomCode];
+  return Boolean(room && socket.deviceType === 'host' && room.hostId === socket.id);
+}
+
+function isControllerForRoom(socket) {
+  const room = socket.roomCode && rooms[socket.roomCode];
+  return Boolean(room && socket.deviceType === 'controller' && room.playerIds.includes(socket.id));
+}
+
+function getHostSocket(room) {
+  return room ? io.sockets.sockets.get(room.hostId) : null;
 }
 
 function createDefaultRoomSettings() {
@@ -316,8 +358,8 @@ io.on('connection', (socket) => {
     socket.emit('room-created', {
       roomCode: roomCode,
       hostIP: hostIP,
-      port: config.SERVER_PORT,
-      joinUrl: `http://${hostIP}:${config.SERVER_PORT}/controller`,
+      port: SERVER_PORT,
+      joinUrl: `http://${hostIP}:${SERVER_PORT}/controller`,
       settings: rooms[roomCode].settings,
       maxAllowedPlayers: MAX_ROOM_PLAYERS
     });
@@ -325,8 +367,8 @@ io.on('connection', (socket) => {
   });
   
   // Controller joins room
-  socket.on('join-room', (data) => {
-    const { roomCode } = data;
+  socket.on('join-room', (data = {}) => {
+    const roomCode = String(data.roomCode || '').trim();
     
     const room = rooms[roomCode];
     
@@ -377,7 +419,7 @@ io.on('connection', (socket) => {
     });
     
     // Notify host
-    const hostSocket = io.sockets.sockets.get(room.hostId);
+    const hostSocket = getHostSocket(room);
     if (hostSocket) {
       hostSocket.emit('player-connected', {
         playerId: socket.id,
@@ -433,54 +475,75 @@ io.on('connection', (socket) => {
   });
   
   // Controller sends input
-  socket.on('player-input', (data) => {
-    if (!socket.roomCode || !rooms[socket.roomCode]) return;
+  socket.on('player-input', (data = {}) => {
+    if (!isControllerForRoom(socket)) return;
     
     const room = rooms[socket.roomCode];
-    const hostSocket = io.sockets.sockets.get(room.hostId);
+    if (room.state !== 'playing') return;
+
+    const hostSocket = getHostSocket(room);
+    const input = sanitizePlayerInput(data);
     
     if (hostSocket) {
       hostSocket.emit('player-input', {
         playerId: socket.id,
-        moveX: data.moveX,
-        moveY: data.moveY,
-        lookDeltaX: data.lookDeltaX,
-        lookDeltaY: data.lookDeltaY,
-        shoot: data.shoot,
-        jump: data.jump,
-        timestamp: data.timestamp
+        ...input
       });
     }
   });
   
   // Controller requests quiz (for ammo)
   socket.on('request-quiz', () => {
+    if (!isControllerForRoom(socket)) return;
+    if (rooms[socket.roomCode].state !== 'playing') return;
+
     const quizQuestions = getRandomQuestions(3);
+    socket.activeQuiz = quizQuestions.map(q => ({
+      id: q.id,
+      correct: q.correct
+    }));
+
     socket.emit('quiz-questions', {
-      questions: quizQuestions,
+      questions: quizQuestions.map(q => ({
+        id: q.id,
+        question: q.question,
+        options: q.options
+      })),
       timestamp: Date.now()
     });
   });
   
   // Controller submits quiz answers
-  socket.on('submit-quiz', (data) => {
-    if (!socket.roomCode || !rooms[socket.roomCode]) return;
-    
-    const { answers } = data; // Array of { questionId, selectedOption }
+  socket.on('submit-quiz', (data = {}) => {
+    if (!isControllerForRoom(socket)) return;
+    if (rooms[socket.roomCode].state !== 'playing') return;
+
+    const answers = Array.isArray(data.answers) ? data.answers : [];
+    const correctById = new Map((socket.activeQuiz || []).map(q => [q.id, q.correct]));
+    const answeredIds = new Set();
     let correctCount = 0;
-    
-    // Note: In a real implementation, we'd validate against stored questions
-    // For simplicity, the correct answers are included in the questions sent to client
-    // This is handled client-side for this demo
-    
+
+    answers.forEach(answer => {
+      if (!answer || !correctById.has(answer.questionId)) return;
+      if (answeredIds.has(answer.questionId)) return;
+      answeredIds.add(answer.questionId);
+      const selectedOption = Number.parseInt(answer.selectedOption, 10);
+      if (!Number.isInteger(selectedOption) || selectedOption < 0 || selectedOption > 3) return;
+      if (selectedOption === correctById.get(answer.questionId)) {
+        correctCount++;
+      }
+    });
+
+    socket.activeQuiz = null;
+
     // Forward to host to process ammo reward
     const room = rooms[socket.roomCode];
-    const hostSocket = io.sockets.sockets.get(room.hostId);
+    const hostSocket = getHostSocket(room);
     
     if (hostSocket) {
       hostSocket.emit('quiz-completed', {
         playerId: socket.id,
-        correctCount: data.correctCount,
+        correctCount,
         timestamp: Date.now()
       });
     }
@@ -488,24 +551,26 @@ io.on('connection', (socket) => {
   
   // Host broadcasts game state
   socket.on('game-state', (data) => {
-    if (!socket.roomCode) return;
+    if (!isHostForRoom(socket)) return;
     socket.to(socket.roomCode).emit('game-state', data);
   });
   
   // Host broadcasts full state with positions
   socket.on('full-state', (data) => {
-    if (!socket.roomCode) return;
+    if (!isHostForRoom(socket)) return;
     socket.to(socket.roomCode).emit('full-state', data);
   });
   
   // Host broadcasts kill event
   socket.on('kill-event', (data) => {
-    if (!socket.roomCode) return;
+    if (!isHostForRoom(socket)) return;
     io.to(socket.roomCode).emit('kill-event', data);
   });
   
   // Host sends death notification to specific player
-  socket.on('player-death', (data) => {
+  socket.on('player-death', (data = {}) => {
+    if (!isHostForRoom(socket)) return;
+
     const victimSocket = io.sockets.sockets.get(data.victimId);
     if (victimSocket) {
       victimSocket.emit('player-died', {
@@ -518,7 +583,9 @@ io.on('connection', (socket) => {
   });
   
   // Host sends respawn notification
-  socket.on('player-respawn', (data) => {
+  socket.on('player-respawn', (data = {}) => {
+    if (!isHostForRoom(socket)) return;
+
     const playerSocket = io.sockets.sockets.get(data.playerId);
     if (playerSocket) {
       playerSocket.emit('player-respawned', data);
@@ -526,7 +593,9 @@ io.on('connection', (socket) => {
   });
   
   // Host sends ammo update after quiz
-  socket.on('ammo-update', (data) => {
+  socket.on('ammo-update', (data = {}) => {
+    if (!isHostForRoom(socket)) return;
+
     const playerSocket = io.sockets.sockets.get(data.playerId);
     if (playerSocket) {
       playerSocket.emit('ammo-updated', {
@@ -538,14 +607,32 @@ io.on('connection', (socket) => {
   
   // Host broadcasts match timer
   socket.on('match-timer', (data) => {
-    if (!socket.roomCode) return;
+    if (!isHostForRoom(socket)) return;
     io.to(socket.roomCode).emit('match-timer', data);
   });
   
   // Host broadcasts match end
   socket.on('match-end', (data) => {
-    if (!socket.roomCode) return;
+    if (!isHostForRoom(socket)) return;
+    rooms[socket.roomCode].state = 'ended';
     io.to(socket.roomCode).emit('match-end', data);
+    emitLobbyState(socket.roomCode);
+  });
+
+  socket.on('restart-game', (data = {}) => {
+    if (!isHostForRoom(socket)) return;
+
+    const room = rooms[socket.roomCode];
+    room.state = 'playing';
+    room.startedAt = Date.now();
+
+    io.to(socket.roomCode).emit('game-started', {
+      roomCode: socket.roomCode,
+      settings: room.settings,
+      matchDuration: room.settings.matchDuration,
+      startedAt: room.startedAt
+    });
+    emitLobbyState(socket.roomCode);
   });
   
   // Handle disconnection
@@ -576,7 +663,7 @@ io.on('connection', (socket) => {
         delete room.players[socket.id];
         
         // Notify host
-        const hostSocket = io.sockets.sockets.get(room.hostId);
+        const hostSocket = getHostSocket(room);
         if (hostSocket) {
           hostSocket.emit('player-disconnected', {
             playerId: socket.id,
@@ -591,8 +678,18 @@ io.on('connection', (socket) => {
   });
 });
 
+server.on('error', (error) => {
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${SERVER_PORT} is already in use. Stop the existing server or start this one with PORT=<free-port> npm start.`);
+    process.exit(1);
+  }
+
+  console.error('Server failed to start:', error);
+  process.exit(1);
+});
+
 // Start server
-server.listen(config.SERVER_PORT, '0.0.0.0', () => {
+server.listen(SERVER_PORT, '0.0.0.0', () => {
   const ip = getLocalIPAddress();
   const allIPs = getAllLocalIPs();
   
@@ -600,11 +697,11 @@ server.listen(config.SERVER_PORT, '0.0.0.0', () => {
   console.log('='.repeat(50));
   console.log('MULTIPLAYER FPS SERVER STARTED');
   console.log('='.repeat(50));
-  console.log(`Local:    http://localhost:${config.SERVER_PORT}`);
-  console.log(`Network:  http://${ip}:${config.SERVER_PORT}`);
+  console.log(`Local:    http://localhost:${SERVER_PORT}`);
+  console.log(`Network:  http://${ip}:${SERVER_PORT}`);
   console.log('');
-  console.log(`Host:     http://${ip}:${config.SERVER_PORT}/host`);
-  console.log(`Control:  http://${ip}:${config.SERVER_PORT}/controller`);
+  console.log(`Host:     http://${ip}:${SERVER_PORT}/host`);
+  console.log(`Control:  http://${ip}:${SERVER_PORT}/controller`);
   console.log('');
   if (allIPs.length > 1) {
     console.log('All available network interfaces:');

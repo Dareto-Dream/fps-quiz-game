@@ -8,9 +8,20 @@
     "socket.io": "^4.7.2"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
-  "keywords": ["fps", "multiplayer", "threejs", "p5js", "socket.io"],
+  "keywords": [
+    "fps",
+    "multiplayer",
+    "threejs",
+    "p5js",
+    "socket.io"
+  ],
   "author": "",
-  "license": "MIT"
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "socket.io-client": "^4.8.3"
+  }
 }

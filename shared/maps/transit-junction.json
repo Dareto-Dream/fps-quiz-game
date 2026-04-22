@@ -1,0 +1,222 @@
+{
+  "id": "transit-junction",
+  "name": "Transit Junction",
+  "description": "A clean station arena with train-car cover, platform blockers, and angled turnstile fights.",
+  "arena": {
+    "width": 64,
+    "depth": 48,
+    "wallHeight": 11
+  },
+  "style": {
+    "floorColor": "#2f3940",
+    "wallColor": "#52606a",
+    "obstacleColor": "#76818b",
+    "accentColor": "#ff5e4d",
+    "gridColor": "#9ee493",
+    "gridSecondaryColor": "#48535b"
+  },
+  "lighting": {
+    "timeOfDay": "morning",
+    "arenaLightColors": ["#ff5e4d", "#9ee493", "#6bb8ff"]
+  },
+  "spawns": [
+    { "x": -28, "z": -20, "yaw": 0.65 },
+    { "x": 28, "z": -20, "yaw": -0.65 },
+    { "x": -28, "z": 20, "yaw": 2.5 },
+    { "x": 28, "z": 20, "yaw": -2.5 },
+    { "x": 0, "z": -22.5, "yaw": 0 },
+    { "x": 0, "z": 22.5, "yaw": 3.14 },
+    { "x": -30, "z": -5, "yaw": 1.38 },
+    { "x": 30, "z": 5, "yaw": -1.76 },
+    { "x": -22, "z": -6, "yaw": 1.05 },
+    { "x": 22, "z": 6, "yaw": -2.1 },
+    { "x": -10, "z": -22, "yaw": 0.2 },
+    { "x": 10, "z": -22, "yaw": -0.2 },
+    { "x": -10, "z": 22, "yaw": 2.94 },
+    { "x": 10, "z": 22, "yaw": -2.94 },
+    { "x": -29, "z": 10, "yaw": 1.85 },
+    { "x": 29, "z": -10, "yaw": -1.28 }
+  ],
+  "obstacles": [
+    {
+      "id": "train-north-west",
+      "type": "box",
+      "x": -18,
+      "z": -14,
+      "width": 18,
+      "depth": 3,
+      "height": 4,
+      "color": "#2f6f9f",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "train-north-east",
+      "type": "box",
+      "x": 18,
+      "z": -14,
+      "width": 18,
+      "depth": 3,
+      "height": 4,
+      "color": "#2f6f9f",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "train-south-west",
+      "type": "box",
+      "x": -18,
+      "z": 14,
+      "width": 18,
+      "depth": 3,
+      "height": 4,
+      "color": "#9f5c2f",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "train-south-east",
+      "type": "box",
+      "x": 18,
+      "z": 14,
+      "width": 18,
+      "depth": 3,
+      "height": 4,
+      "color": "#9f5c2f",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "ticket-booth",
+      "type": "box",
+      "x": 0,
+      "z": 0,
+      "width": 7,
+      "depth": 5,
+      "height": 4.5,
+      "color": "#5d6871",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "west-platform-pillar",
+      "type": "box",
+      "x": -27,
+      "z": 0,
+      "width": 3,
+      "depth": 8,
+      "height": 5,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "east-platform-pillar",
+      "type": "box",
+      "x": 27,
+      "z": 0,
+      "width": 3,
+      "depth": 8,
+      "height": 5,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "turnstile-north-left",
+      "type": "box",
+      "x": -8,
+      "z": -5,
+      "width": 7,
+      "depth": 1.2,
+      "height": 1.7,
+      "yaw": -0.55,
+      "color": "#ff5e4d",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "turnstile-north-right",
+      "type": "box",
+      "x": 8,
+      "z": -5,
+      "width": 7,
+      "depth": 1.2,
+      "height": 1.7,
+      "yaw": 0.55,
+      "color": "#ff5e4d",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "turnstile-south-left",
+      "type": "box",
+      "x": -8,
+      "z": 5,
+      "width": 7,
+      "depth": 1.2,
+      "height": 1.7,
+      "yaw": 0.55,
+      "color": "#9ee493",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "turnstile-south-right",
+      "type": "box",
+      "x": 8,
+      "z": 5,
+      "width": 7,
+      "depth": 1.2,
+      "height": 1.7,
+      "yaw": -0.55,
+      "color": "#9ee493",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "platform-block-north",
+      "type": "box",
+      "x": 0,
+      "z": -20,
+      "width": 12,
+      "depth": 2.2,
+      "height": 2.4,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "platform-block-south",
+      "type": "box",
+      "x": 0,
+      "z": 20,
+      "width": 12,
+      "depth": 2.2,
+      "height": 2.4,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "advert-board-west",
+      "type": "box",
+      "x": -29,
+      "z": -14,
+      "width": 1.5,
+      "depth": 6,
+      "height": 3,
+      "color": "#6bb8ff",
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "advert-board-east",
+      "type": "box",
+      "x": 29,
+      "z": 14,
+      "width": 1.5,
+      "depth": 6,
+      "height": 3,
+      "color": "#6bb8ff",
+      "collides": true,
+      "blocksShots": true
+    }
+  ]
+}

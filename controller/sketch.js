@@ -35,10 +35,15 @@ let inputRate = 30;
 const CAMERA_EYE_HEIGHT = 1.7;
 const MAX_FRAME_DELTA = 0.05;
 const SERVER_POSITION_SNAP_DISTANCE = 3;
-const SERVER_POSITION_DEADZONE = 0.35;
-const SERVER_POSITION_RECONCILE_RATE_MOVING = 3;
-const SERVER_POSITION_RECONCILE_RATE_IDLE = 12;
+const SERVER_POSITION_MOVING_DEADZONE = 0.85;
+const SERVER_POSITION_IDLE_DEADZONE = 0.35;
+const SERVER_POSITION_RECONCILE_RATE_MOVING = 0.8;
+const SERVER_POSITION_RECONCILE_RATE_IDLE = 5;
 const OTHER_PLAYER_INTERPOLATION_RATE = 14;
+const LOOK_STICK_YAW_SCALE = 0.28;
+const LOOK_STICK_PITCH_SCALE = 0.16;
+const KEYBOARD_LOOK_YAW = 0.24;
+const KEYBOARD_LOOK_PITCH = 0.14;
 
 // Player position/rotation (synced from host)
 let myPosition = new THREE.Vector3(0, 0, 0);
@@ -168,11 +173,13 @@ function getFallbackMap() {
 function startFiring() {
   shooting = true;
   document.getElementById('fire-btn').classList.add('active');
+  sendInput();
 }
 
 function stopFiring() {
   shooting = false;
   document.getElementById('fire-btn').classList.remove('active');
+  sendInput();
 }
 
 // ============================================
@@ -227,6 +234,7 @@ function handleJoystickStart(e, joystick, side) {
   joystick.currentY = touch.clientY;
   
   updateJoystickVisual(joystick, side);
+  sendInput();
 }
 
 function handleJoystickMove(e, joystick, side) {
@@ -238,6 +246,7 @@ function handleJoystickMove(e, joystick, side) {
       joystick.currentX = touch.clientX;
       joystick.currentY = touch.clientY;
       updateJoystickVisual(joystick, side);
+      sendInput();
       break;
     }
   }
@@ -255,6 +264,7 @@ function handleJoystickEnd(e, joystick, side) {
         moveX = 0;
         moveY = 0;
       }
+      sendInput();
       break;
     }
   }
@@ -278,6 +288,7 @@ function handleMouseJoystickStart(e, joystick, side) {
   activeMouseSide = side;
   
   updateJoystickVisual(joystick, side);
+  sendInput();
 }
 
 function handleMouseJoystickMove(e) {
@@ -286,6 +297,7 @@ function handleMouseJoystickMove(e) {
   activeMouseJoystick.currentX = e.clientX;
   activeMouseJoystick.currentY = e.clientY;
   updateJoystickVisual(activeMouseJoystick, activeMouseSide);
+  sendInput();
 }
 
 function handleMouseJoystickEnd(e) {
@@ -297,6 +309,7 @@ function handleMouseJoystickEnd(e) {
       moveX = 0;
       moveY = 0;
     }
+    sendInput();
     
     activeMouseJoystick = null;
     activeMouseSide = null;
@@ -332,8 +345,8 @@ function updateJoystickVisual(joystick, side) {
     moveY = safeY;
   } else {
     // Right joystick controls look - accumulate rotation
-    lookDeltaX = safeX * 0.05;
-    lookDeltaY = safeY * 0.03;
+    lookDeltaX = safeX * LOOK_STICK_YAW_SCALE;
+    lookDeltaY = safeY * LOOK_STICK_PITCH_SCALE;
   }
 }
 
@@ -344,6 +357,7 @@ function resetJoystickVisual(side) {
   if (side === 'right') {
     lookDeltaX = 0;
     lookDeltaY = 0;
+    sendInput();
   }
 }
 
@@ -382,6 +396,7 @@ function handleKeyDown(e) {
   }
   
   updateKeyboardInput();
+  sendInput();
 }
 
 function handleKeyUp(e) {
@@ -392,6 +407,7 @@ function handleKeyUp(e) {
   }
   
   updateKeyboardInput();
+  sendInput();
 }
 
 function updateKeyboardInput() {
@@ -404,12 +420,12 @@ function updateKeyboardInput() {
   if (keysPressed['d']) moveX = 1;
   
   // Arrow keys for look
-  if (keysPressed['arrowleft']) lookDeltaX = -0.03;
-  else if (keysPressed['arrowright']) lookDeltaX = 0.03;
+  if (keysPressed['arrowleft']) lookDeltaX = -KEYBOARD_LOOK_YAW;
+  else if (keysPressed['arrowright']) lookDeltaX = KEYBOARD_LOOK_YAW;
   else if (!rightJoystick.active) lookDeltaX = 0;
   
-  if (keysPressed['arrowup']) lookDeltaY = -0.02;
-  else if (keysPressed['arrowdown']) lookDeltaY = 0.02;
+  if (keysPressed['arrowup']) lookDeltaY = -KEYBOARD_LOOK_PITCH;
+  else if (keysPressed['arrowdown']) lookDeltaY = KEYBOARD_LOOK_PITCH;
   else if (!rightJoystick.active) lookDeltaY = 0;
 }
 
@@ -789,8 +805,12 @@ function reconcileCameraPosition(deltaTime) {
     return;
   }
 
-  if (horizontalDistance > SERVER_POSITION_DEADZONE) {
-    const isMoving = Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001;
+  const isMoving = Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001;
+  const deadzone = isMoving
+    ? SERVER_POSITION_MOVING_DEADZONE
+    : SERVER_POSITION_IDLE_DEADZONE;
+
+  if (horizontalDistance > deadzone) {
     const rate = isMoving
       ? SERVER_POSITION_RECONCILE_RATE_MOVING
       : SERVER_POSITION_RECONCILE_RATE_IDLE;

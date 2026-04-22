@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { applyMapMovement, calculateLookRotation, sanitizePlayerInput } from '../shared/movement.mjs';
 import { buildMapScene, disposeMapScene, getArenaConfig } from '../shared/map-renderer.mjs';
+import { createShotEffects, serializeVector3, worldNormalFromHit } from '../shared/shot-visuals.mjs';
 
 // ============================================
 // GAME CONFIGURATION
@@ -45,6 +46,8 @@ const CONFIG = {
   ]
 };
 
+const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
+
 // ============================================
 // GLOBAL VARIABLES
 // ============================================
@@ -56,9 +59,7 @@ let streakLeader = null;
 let matchTimer = CONFIG.MATCH_DURATION;
 let matchActive = false;
 let roomCode = '';
-let serverIP = '';
-let serverPort = '';
-let joinUrl = '';
+let joinUrl = PUBLIC_CONTROLLER_URL;
 let lobbyState = null;
 let lobbySettings = {
   maxPlayers: CONFIG.MAX_PLAYERS,
@@ -86,6 +87,7 @@ const MAX_SIMULATION_DELTA = 0.05;
 
 // Raycaster for hit detection
 const raycaster = new THREE.Raycaster();
+const SHOT_MAX_DISTANCE = 90;
 
 // ============================================
 // INITIALIZATION
@@ -351,18 +353,16 @@ function initSocket() {
   
   socket.on('room-created', (data) => {
     roomCode = data.roomCode;
-    serverIP = data.hostIP;
-    serverPort = data.port;
-    joinUrl = data.joinUrl || `${window.location.origin}/controller`;
+    joinUrl = data.joinUrl || PUBLIC_CONTROLLER_URL;
     lobbySettings = data.settings || lobbySettings;
     
     document.getElementById('waiting-message').style.display = 'none';
     document.getElementById('ip-display').style.display = 'block';
     document.getElementById('room-display').style.display = 'block';
-    document.getElementById('ip-address').textContent = serverIP;
+    document.getElementById('ip-address').textContent = joinUrl;
     document.getElementById('room-code').textContent = roomCode;
     
-    console.log(`Room created: ${roomCode} at ${serverIP}:${data.port}`);
+    console.log(`Room created: ${roomCode}`);
 
     updateLobbyFromRoomCreated(data);
   });
@@ -741,9 +741,25 @@ function processShot(playerId) {
   const nearestBlockerHit = blockerIntersects[0];
 
   if (nearestBlockerHit && (!nearestPlayerHit || nearestBlockerHit.distance < nearestPlayerHit.distance)) {
+    createAndBroadcastShotVisual({
+      shooter: player,
+      origin: rayOrigin,
+      end: nearestBlockerHit.point,
+      impactPoint: nearestBlockerHit.point,
+      impactNormal: worldNormalFromHit(nearestBlockerHit)
+    });
     return;
   }
   
+  const shotEnd = nearestPlayerHit
+    ? nearestPlayerHit.point
+    : rayOrigin.clone().add(aimDirection.clone().multiplyScalar(SHOT_MAX_DISTANCE));
+  createAndBroadcastShotVisual({
+    shooter: player,
+    origin: rayOrigin,
+    end: shotEnd
+  });
+
   if (nearestPlayerHit) {
     const hitMesh = nearestPlayerHit.object;
     const hitPlayerId = hitMesh.userData.playerId;
@@ -766,6 +782,46 @@ function processShot(playerId) {
       }
     }
   }
+}
+
+function createAndBroadcastShotVisual({ shooter, origin, end, impactPoint = null, impactNormal = null }) {
+  const payload = {
+    shooterId: shooter.id,
+    color: shooter.color,
+    origin: serializeVector3(origin),
+    end: serializeVector3(end),
+    impactPoint: serializeVector3(impactPoint),
+    impactNormal: serializeVector3(impactNormal),
+    timestamp: Date.now()
+  };
+
+  createShotVisualFromPayload(payload);
+  socket.emit('shot-visual', payload);
+}
+
+function createShotVisualFromPayload(payload) {
+  const origin = payload.origin
+    ? new THREE.Vector3(payload.origin.x, payload.origin.y, payload.origin.z)
+    : null;
+  const end = payload.end
+    ? new THREE.Vector3(payload.end.x, payload.end.y, payload.end.z)
+    : null;
+  const impactPoint = payload.impactPoint
+    ? new THREE.Vector3(payload.impactPoint.x, payload.impactPoint.y, payload.impactPoint.z)
+    : null;
+  const impactNormal = payload.impactNormal
+    ? new THREE.Vector3(payload.impactNormal.x, payload.impactNormal.y, payload.impactNormal.z)
+    : null;
+
+  createShotEffects({
+    THREE,
+    scene,
+    origin,
+    end,
+    impactPoint,
+    impactNormal,
+    color: payload.color || '#fff0ad'
+  });
 }
 
 function createMuzzleFlash(player) {
@@ -939,11 +995,18 @@ function clampNumber(value, min, max) {
 function updateLobbyFromRoomCreated(data) {
   document.body.classList.add('lobby-active');
   document.getElementById('lobby-room-code').textContent = data.roomCode || '----';
-  document.getElementById('lobby-server-ip').textContent = `${data.hostIP}:${data.port}`;
   document.getElementById('lobby-join-url').textContent = joinUrl;
+  updateJoinQr(joinUrl);
   applyMapFromRoomData(data, { repositionPlayers: true });
   applyLobbySettings(data.settings || lobbySettings, data.maxAllowedPlayers);
   updateLobbyStartState();
+}
+
+function updateJoinQr(url) {
+  const qr = document.getElementById('lobby-join-qr');
+  if (!qr) return;
+  qr.src = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=10&data=${encodeURIComponent(url)}`;
+  qr.alt = `QR code for ${url}`;
 }
 
 function handleLobbyState(data) {

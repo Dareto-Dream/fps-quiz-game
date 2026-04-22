@@ -12,8 +12,8 @@
       <div class="screen-kicker">Controller Link</div>
       <h1>ARENA FPS</h1>
 
-      <label class="field-label" for="server-url">Server URL</label>
-      <input type="url" id="server-url" placeholder="https://your-server.com" autocomplete="url" inputmode="url">
+      <label class="field-label" for="server-url">Game Site</label>
+      <input type="url" id="server-url" placeholder="https://fps-quiz-game-production.up.railway.app" autocomplete="url" inputmode="url">
 
       <label class="field-label" for="room-code">Room Code</label>
       <input type="text" id="room-code" placeholder="0000" maxlength="4" pattern="[0-9]{4}" inputmode="numeric" autocomplete="one-time-code">
@@ -48,6 +48,13 @@
 
   <div id="game-screen">
     <canvas id="game-canvas"></canvas>
+    <div id="crosshair" aria-hidden="true">
+      <span class="crosshair-line crosshair-up"></span>
+      <span class="crosshair-line crosshair-right"></span>
+      <span class="crosshair-line crosshair-down"></span>
+      <span class="crosshair-line crosshair-left"></span>
+      <span class="crosshair-dot"></span>
+    </div>
 
     <div id="hud">
       <div id="health-container">

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { applyMapMovement, calculateLookRotation, normalizeAngleRadians } from '../shared/movement.mjs';
 import { buildMapScene, disposeMapScene, getArenaConfig } from '../shared/map-renderer.mjs';
+import { createShotEffects, deserializeVector3 } from '../shared/shot-visuals.mjs';
 
 // ============================================
 // GAME STATE
@@ -15,6 +16,7 @@ let lobbyState = null;
 let inputInterval = null;
 let animationStarted = false;
 let matchStarted = false;
+const PUBLIC_SERVER_URL = 'https://fps-quiz-game-production.up.railway.app';
 
 // Player stats
 let myHealth = 100;
@@ -96,11 +98,7 @@ let mapRuntime = null;
 document.addEventListener('DOMContentLoaded', function() {
   loadClientConfig();
 
-  // Auto-fill server URL from current page URL (works for hosted servers)
-  const currentUrl = window.location.origin;
-  if (currentUrl) {
-    document.getElementById('server-url').value = currentUrl;
-  }
+  document.getElementById('server-url').value = PUBLIC_SERVER_URL;
   
   // Event listeners
   document.getElementById('connect-btn').addEventListener('click', connectToServer);
@@ -535,6 +533,7 @@ function connectToServer() {
   socket.on('game-started', handleGameStarted);
   socket.on('game-state', handleGameState);
   socket.on('full-state', handleFullState);
+  socket.on('shot-visual', handleShotVisual);
   socket.on('kill-event', handleKillEvent);
   socket.on('player-died', handlePlayerDied);
   socket.on('player-respawned', handlePlayerRespawned);
@@ -868,6 +867,20 @@ function updateOtherPlayers(deltaTime) {
     player.mesh.position.lerp(player.targetPosition, alpha);
     const rotationDelta = normalizeAngleRadians(player.targetRotationY - player.mesh.rotation.y);
     player.mesh.rotation.y = normalizeAngleRadians(player.mesh.rotation.y + rotationDelta * alpha);
+  });
+}
+
+function handleShotVisual(data = {}) {
+  if (!scene) return;
+
+  createShotEffects({
+    THREE,
+    scene,
+    origin: deserializeVector3(THREE, data.origin),
+    end: deserializeVector3(THREE, data.end),
+    impactPoint: deserializeVector3(THREE, data.impactPoint),
+    impactNormal: deserializeVector3(THREE, data.impactNormal),
+    color: data.color || '#fff0ad'
   });
 }
 

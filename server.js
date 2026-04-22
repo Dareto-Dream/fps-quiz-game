@@ -33,6 +33,7 @@ const MAX_ROOM_PLAYERS = Math.min(config.MAX_PLAYERS, config.PLAYER_COLORS.lengt
 const MIN_MATCH_DURATION = 60;
 const MAX_MATCH_DURATION = 900;
 const SERVER_PORT = parsePort(process.env.PORT, config.SERVER_PORT);
+const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
@@ -110,7 +111,7 @@ app.get('/', (req, res) => {
           <h1>Arena FPS</h1>
           <nav>
             <a href="/host">HOST DISPLAY</a>
-            <a href="/controller">MOBILE CONTROLLER</a>
+            <a href="${PUBLIC_CONTROLLER_URL}">MOBILE CONTROLLER</a>
           </nav>
         </main>
       </body>
@@ -384,7 +385,7 @@ io.on('connection', (socket) => {
       roomCode: roomCode,
       hostIP: hostIP,
       port: SERVER_PORT,
-      joinUrl: `http://${hostIP}:${SERVER_PORT}/controller`,
+      joinUrl: PUBLIC_CONTROLLER_URL,
       settings: rooms[roomCode].settings,
       map: getMapById(rooms[roomCode].settings.mapId),
       maxAllowedPlayers: MAX_ROOM_PLAYERS
@@ -593,6 +594,11 @@ io.on('connection', (socket) => {
   socket.on('kill-event', (data) => {
     if (!isHostForRoom(socket)) return;
     io.to(socket.roomCode).emit('kill-event', data);
+  });
+
+  socket.on('shot-visual', (data) => {
+    if (!isHostForRoom(socket)) return;
+    io.to(socket.roomCode).emit('shot-visual', data);
   });
   
   // Host sends death notification to specific player

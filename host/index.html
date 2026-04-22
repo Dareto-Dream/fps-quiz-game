@@ -27,13 +27,12 @@
           <div class="label">ROOM CODE</div>
           <div id="lobby-room-code">----</div>
           <div class="lobby-meta">
-            <div>
-              <span>Server</span>
-              <strong id="lobby-server-ip">---</strong>
-            </div>
-            <div>
-              <span>Controller</span>
+            <div class="join-card">
+              <span>Join Link</span>
               <strong id="lobby-join-url">---</strong>
+              <div id="lobby-join-qr-wrap">
+                <img id="lobby-join-qr" alt="Controller join QR code">
+              </div>
             </div>
           </div>
         </section>
@@ -78,9 +77,9 @@
   
   <!-- Connection Info (Bottom Left) -->
   <div id="connection-info">
-    <div id="waiting-message">Starting server...</div>
+    <div id="waiting-message">Creating room...</div>
     <div id="ip-display" style="display: none;">
-      <div class="label">SERVER IP</div>
+      <div class="label">JOIN</div>
       <div id="ip-address">---</div>
     </div>
     <div id="room-display" style="display: none;">

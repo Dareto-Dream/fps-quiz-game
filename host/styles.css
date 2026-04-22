@@ -262,6 +262,10 @@ body:not(.lobby-active) #lobby-screen {
   background: rgba(255, 255, 255, 0.045);
 }
 
+.lobby-meta .join-card {
+  gap: 11px;
+}
+
 .lobby-meta span,
 .setting-row span {
   color: var(--dim);
@@ -275,6 +279,23 @@ body:not(.lobby-active) #lobby-screen {
   color: var(--text);
   font-size: 16px;
   font-weight: 700;
+}
+
+#lobby-join-qr-wrap {
+  display: grid;
+  place-items: center;
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  padding: 10px;
+  border: 1px solid rgba(244, 239, 226, 0.2);
+  border-radius: 6px;
+  background: #fff;
+}
+
+#lobby-join-qr {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 #lobby-player-count {
@@ -481,8 +502,11 @@ body:not(.lobby-active) #lobby-screen {
 }
 
 #ip-address {
+  max-width: 280px;
+  overflow-wrap: anywhere;
   color: var(--cyan);
-  font-size: 24px;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 #room-code {

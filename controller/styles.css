@@ -306,6 +306,60 @@ body::before {
   height: 100%;
 }
 
+#crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 18;
+  width: 54px;
+  height: 54px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.72));
+}
+
+.crosshair-line,
+.crosshair-dot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  background: rgba(244, 239, 226, 0.92);
+  transform: translate(-50%, -50%);
+}
+
+.crosshair-line {
+  width: 2px;
+  height: 12px;
+  border-radius: 999px;
+}
+
+.crosshair-up {
+  transform: translate(-50%, -27px);
+}
+
+.crosshair-right {
+  width: 12px;
+  height: 2px;
+  transform: translate(15px, -50%);
+}
+
+.crosshair-down {
+  transform: translate(-50%, 15px);
+}
+
+.crosshair-left {
+  width: 12px;
+  height: 2px;
+  transform: translate(-27px, -50%);
+}
+
+.crosshair-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 209, 102, 0.96);
+}
+
 #hud {
   position: absolute;
   top: max(12px, env(safe-area-inset-top));

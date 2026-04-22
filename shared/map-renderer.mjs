@@ -117,6 +117,8 @@ export function buildMapScene({ THREE, scene, renderer, map, shadows = false, li
   const lighting = resolveLightingConfig(activeMap.lighting, lightIntensity);
   const group = new THREE.Group();
   group.name = `map-${activeMap.id || 'arena'}`;
+  const obstacleMeshes = [];
+  const shotBlockers = [];
 
   configureSceneLighting({ THREE, scene, renderer, group, lighting, shadows, width: WIDTH, depth: DEPTH });
 
@@ -129,6 +131,7 @@ export function buildMapScene({ THREE, scene, renderer, map, shadows = false, li
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = shadows;
   group.add(floor);
+  shotBlockers.push(floor);
 
   const gridHelper = new THREE.GridHelper(
     Math.max(WIDTH, DEPTH),
@@ -184,11 +187,10 @@ export function buildMapScene({ THREE, scene, renderer, map, shadows = false, li
   const westWall = eastWall.clone();
   westWall.position.x = -WIDTH / 2 - wallThickness / 2;
   group.add(westWall);
+  shotBlockers.push(northWall, southWall, eastWall, westWall);
 
   addArenaAccentLights({ THREE, group, lighting, width: WIDTH, depth: DEPTH });
 
-  const obstacleMeshes = [];
-  const shotBlockers = [];
   const defaultObstacleMaterial = new THREE.MeshStandardMaterial({
     color: colorValue(THREE, style.obstacleColor, 0x3a3325),
     roughness: 0.5,

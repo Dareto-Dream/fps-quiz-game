@@ -104,8 +104,8 @@ async function init() {
 function initThreeJS() {
   // Scene
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a1a2e);
-  scene.fog = new THREE.Fog(0x1a1a2e, 30, 80);
+  scene.background = new THREE.Color(0x070807);
+  scene.fog = new THREE.Fog(0x070807, 34, 92);
   
   // Camera
   camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -119,6 +119,9 @@ function initThreeJS() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
   document.getElementById('game-container').appendChild(renderer.domElement);
   
   // CSS2D Renderer for labels
@@ -130,11 +133,11 @@ function initThreeJS() {
   document.getElementById('game-container').appendChild(labelRenderer.domElement);
   
   // Lighting
-  const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+  const ambientLight = new THREE.AmbientLight(0x6b5a43, 0.52);
   scene.add(ambientLight);
   
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
-  directionalLight.position.set(20, 40, 20);
+  const directionalLight = new THREE.DirectionalLight(0xffead0, 1.18);
+  directionalLight.position.set(18, 42, 22);
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 2048;
   directionalLight.shadow.mapSize.height = 2048;
@@ -145,6 +148,10 @@ function initThreeJS() {
   directionalLight.shadow.camera.top = 40;
   directionalLight.shadow.camera.bottom = -40;
   scene.add(directionalLight);
+
+  const rimLight = new THREE.DirectionalLight(0x26d8d8, 0.48);
+  rimLight.position.set(-24, 24, -18);
+  scene.add(rimLight);
   
   // Handle resize
   window.addEventListener('resize', onWindowResize);
@@ -359,9 +366,9 @@ function createArena() {
   // Floor
   const floorGeometry = new THREE.PlaneGeometry(WIDTH, DEPTH);
   const floorMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x2a2a4a,
-    roughness: 0.8,
-    metalness: 0.2
+    color: 0x111312,
+    roughness: 0.74,
+    metalness: 0.18
   });
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
   floor.rotation.x = -Math.PI / 2;
@@ -369,15 +376,31 @@ function createArena() {
   scene.add(floor);
   
   // Grid lines on floor
-  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0x444466, 0x333355);
+  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0xffb23f, 0x27302f);
   gridHelper.position.y = 0.01;
   scene.add(gridHelper);
+
+  const stripMaterial = new THREE.MeshBasicMaterial({
+    color: 0x26d8d8,
+    transparent: true,
+    opacity: 0.72
+  });
+  [
+    { x: 0, z: -DEPTH / 2 + 2, w: WIDTH - 7, d: 0.08 },
+    { x: 0, z: DEPTH / 2 - 2, w: WIDTH - 7, d: 0.08 },
+    { x: -WIDTH / 2 + 2, z: 0, w: 0.08, d: DEPTH - 7 },
+    { x: WIDTH / 2 - 2, z: 0, w: 0.08, d: DEPTH - 7 }
+  ].forEach(strip => {
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(strip.w, 0.035, strip.d), stripMaterial);
+    marker.position.set(strip.x, 0.035, strip.z);
+    scene.add(marker);
+  });
   
   // Wall material
   const wallMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x3a3a5a,
-    roughness: 0.6,
-    metalness: 0.3
+    color: 0x202322,
+    roughness: 0.58,
+    metalness: 0.34
   });
   
   // Walls
@@ -412,6 +435,17 @@ function createArena() {
   const westWall = eastWall.clone();
   westWall.position.x = -WIDTH / 2 - wallThickness / 2;
   scene.add(westWall);
+
+  [
+    [-WIDTH / 2 + 4, 3, -DEPTH / 2 + 4],
+    [WIDTH / 2 - 4, 3, -DEPTH / 2 + 4],
+    [-WIDTH / 2 + 4, 3, DEPTH / 2 - 4],
+    [WIDTH / 2 - 4, 3, DEPTH / 2 - 4]
+  ].forEach(([x, y, z], index) => {
+    const light = new THREE.PointLight(index % 2 === 0 ? 0xffb23f : 0x26d8d8, 0.55, 18, 1.7);
+    light.position.set(x, y, z);
+    scene.add(light);
+  });
   
   // Interior obstacles
   createObstacles();
@@ -419,9 +453,11 @@ function createArena() {
 
 function createObstacles() {
   const obstacleMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x4a4a6a,
+    color: 0x3a3325,
     roughness: 0.5,
-    metalness: 0.4
+    metalness: 0.46,
+    emissive: 0x1b1006,
+    emissiveIntensity: 0.08
   });
   
   // Center pillar
@@ -525,10 +561,10 @@ function createPlayer(playerId, color, colorName) {
   label.position.set(0, 2.5, 0);
   playerGroup.add(label);
   
-  // Crown (hidden initially)
+  // Streak leader tag (hidden initially)
   const crownDiv = document.createElement('div');
   crownDiv.className = 'crown-label';
-  crownDiv.textContent = '👑';
+  crownDiv.textContent = 'LEAD';
   crownDiv.style.display = 'none';
   const crownLabel = new CSS2DObject(crownDiv);
   crownLabel.position.set(0, 2.8, 0);
@@ -1171,8 +1207,8 @@ function updateLeaderboard() {
       <span class="rank">${i + 1}.</span>
       <span class="player-name" style="color: ${p.color}">${p.colorName}</span>
       <span class="stats">${p.kills}-${p.deaths}</span>
-      ${p.streak >= CONFIG.STREAK_THRESHOLD ? `<span class="streak-indicator">🔥${p.streak}</span>` : ''}
-      ${p.id === streakLeader ? '<span class="crown">👑</span>' : ''}
+      ${p.streak >= CONFIG.STREAK_THRESHOLD ? `<span class="streak-indicator">STK ${p.streak}</span>` : ''}
+      ${p.id === streakLeader ? '<span class="crown">LEAD</span>' : ''}
     </div>
   `).join('');
   
@@ -1204,7 +1240,7 @@ function addKillFeed(killerName, victimName, killerColor, victimColor) {
   entry.className = 'kill-entry';
   entry.innerHTML = `
     <span class="killer" style="color: ${killerColor}">${killerName}</span>
-    <span class="icon">☠</span>
+    <span class="icon">ELIM</span>
     <span class="victim" style="color: ${victimColor}">${victimName}</span>
   `;
   feed.insertBefore(entry, feed.firstChild);
@@ -1291,7 +1327,7 @@ function endMatch() {
   
   if (winner) {
     document.getElementById('winner-display').innerHTML = `
-      🏆 WINNER 🏆<br>
+      WINNER<br>
       <span class="winner-name" style="color: ${winner.color}">${winner.colorName}</span><br>
       ${winner.kills} Kills
     `;

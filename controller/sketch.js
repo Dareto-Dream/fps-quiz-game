@@ -523,8 +523,8 @@ function handleGameStarted(data) {
 function initThreeJS() {
   // Scene
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x1a1a2e);
-  scene.fog = new THREE.Fog(0x1a1a2e, 20, 60);
+  scene.background = new THREE.Color(0x070807);
+  scene.fog = new THREE.Fog(0x070807, 22, 66);
   
   // Camera (first person)
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -548,14 +548,21 @@ function initThreeJS() {
   renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.08;
   
   // Lighting
-  const ambientLight = new THREE.AmbientLight(0x404060, 0.6);
+  const ambientLight = new THREE.AmbientLight(0x6b5a43, 0.52);
   scene.add(ambientLight);
   
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
-  directionalLight.position.set(20, 40, 20);
+  const directionalLight = new THREE.DirectionalLight(0xffead0, 1.04);
+  directionalLight.position.set(18, 40, 22);
   scene.add(directionalLight);
+
+  const rimLight = new THREE.DirectionalLight(0x26d8d8, 0.42);
+  rimLight.position.set(-22, 22, -18);
+  scene.add(rimLight);
   
   // Add camera to scene (so gun renders)
   scene.add(camera);
@@ -573,20 +580,41 @@ function createArena() {
   // Floor
   const floorGeometry = new THREE.PlaneGeometry(WIDTH, DEPTH);
   const floorMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x2a2a4a,
-    roughness: 0.8
+    color: 0x111312,
+    roughness: 0.74,
+    metalness: 0.18
   });
   const floor = new THREE.Mesh(floorGeometry, floorMaterial);
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
   
   // Grid
-  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0x444466, 0x333355);
+  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0xffb23f, 0x27302f);
   gridHelper.position.y = 0.01;
   scene.add(gridHelper);
+
+  const stripMaterial = new THREE.MeshBasicMaterial({
+    color: 0x26d8d8,
+    transparent: true,
+    opacity: 0.72
+  });
+  [
+    { x: 0, z: -DEPTH / 2 + 2, w: WIDTH - 7, d: 0.08 },
+    { x: 0, z: DEPTH / 2 - 2, w: WIDTH - 7, d: 0.08 },
+    { x: -WIDTH / 2 + 2, z: 0, w: 0.08, d: DEPTH - 7 },
+    { x: WIDTH / 2 - 2, z: 0, w: 0.08, d: DEPTH - 7 }
+  ].forEach(strip => {
+    const marker = new THREE.Mesh(new THREE.BoxGeometry(strip.w, 0.035, strip.d), stripMaterial);
+    marker.position.set(strip.x, 0.035, strip.z);
+    scene.add(marker);
+  });
   
   // Wall material
-  const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x3a3a5a });
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: 0x202322,
+    roughness: 0.58,
+    metalness: 0.34
+  });
   
   // Walls
   const wallThickness = 1;
@@ -616,9 +644,26 @@ function createArena() {
   const westWall = eastWall.clone();
   westWall.position.x = -WIDTH / 2 - wallThickness / 2;
   scene.add(westWall);
+
+  [
+    [-WIDTH / 2 + 4, 3, -DEPTH / 2 + 4],
+    [WIDTH / 2 - 4, 3, -DEPTH / 2 + 4],
+    [-WIDTH / 2 + 4, 3, DEPTH / 2 - 4],
+    [WIDTH / 2 - 4, 3, DEPTH / 2 - 4]
+  ].forEach(([x, y, z], index) => {
+    const light = new THREE.PointLight(index % 2 === 0 ? 0xffb23f : 0x26d8d8, 0.5, 16, 1.7);
+    light.position.set(x, y, z);
+    scene.add(light);
+  });
   
   // Obstacles
-  const obstacleMaterial = new THREE.MeshStandardMaterial({ color: 0x4a4a6a });
+  const obstacleMaterial = new THREE.MeshStandardMaterial({
+    color: 0x3a3325,
+    roughness: 0.5,
+    metalness: 0.46,
+    emissive: 0x1b1006,
+    emissiveIntensity: 0.08
+  });
   
   // Center pillar
   const centerPillar = new THREE.Mesh(
@@ -769,9 +814,9 @@ function updateOtherPlayer(id, data) {
 function handleKillEvent(data) {
   if (data.killerId === playerId) {
     // Show kill notification with streak info
-    let killText = 'KILL!';
+    let killText = 'KILL';
     if (data.killerStreak >= 3) {
-      killText = `KILL! (${data.killerStreak} STREAK 🔥)`;
+      killText = `KILL - ${data.killerStreak} STREAK`;
     }
     showNotification('kill-notification', killText, 2000);
     
@@ -831,7 +876,7 @@ function handleQuizQuestions(data) {
   quizAnswers = new Array(quizQuestions.length).fill(-1);
   quizActive = true;
   renderQuiz();
-  document.getElementById('quiz-modal').style.display = 'block';
+  document.getElementById('quiz-modal').style.display = 'flex';
 }
 
 function handleAmmoUpdated(data) {
@@ -849,8 +894,8 @@ function handleMatchEnd(data) {
   document.getElementById('match-end').style.display = 'flex';
   
   if (data.winner) {
-    document.getElementById('winner-info').innerHTML = 
-      `🏆 Winner: <strong>${data.winner.colorName}</strong> with ${data.winner.kills} kills`;
+    document.getElementById('winner-info').innerHTML =
+      `Winner: <strong>${data.winner.colorName}</strong> with ${data.winner.kills} kills`;
   }
   
   document.getElementById('your-final-stats').textContent = 
@@ -884,7 +929,7 @@ function updateHUD() {
   
   // Ammo with low ammo warning
   const ammoDisplay = document.getElementById('ammo-display');
-  ammoDisplay.textContent = `⚡ ${myAmmo}`;
+  ammoDisplay.textContent = `AMMO ${myAmmo}`;
   if (myAmmo <= 3) {
     ammoDisplay.style.color = '#ff4444';
   } else if (myAmmo <= 5) {
@@ -894,8 +939,8 @@ function updateHUD() {
   }
   
   // Stats with streak indicator
-  document.getElementById('stats-display').innerHTML = 
-    `K/D: ${myKills}/${myDeaths}<br>Streak: ${myStreak}${myStreak >= 3 ? ' 🔥' : ''}`;
+  document.getElementById('stats-display').innerHTML =
+    `K/D ${myKills}/${myDeaths}<br>Streak ${myStreak}${myStreak >= 3 ? ' HOT' : ''}`;
 }
 
 function updateTimer() {

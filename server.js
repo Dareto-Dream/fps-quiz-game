@@ -44,19 +44,65 @@ app.get('/', (req, res) => {
       <head>
         <title>Multiplayer FPS</title>
         <style>
-          body { font-family: Arial, sans-serif; background: #1a1a2e; color: white; 
-                 display: flex; justify-content: center; align-items: center; 
-                 height: 100vh; margin: 0; flex-direction: column; }
-          a { color: #00d4ff; font-size: 24px; margin: 20px; text-decoration: none; 
-              padding: 20px 40px; border: 2px solid #00d4ff; border-radius: 10px; }
-          a:hover { background: #00d4ff; color: #1a1a2e; }
-          h1 { font-size: 48px; margin-bottom: 40px; }
+          @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Sans:wght@500;700&family=JetBrains+Mono:wght@700;800&display=swap');
+          * { box-sizing: border-box; }
+          body {
+            min-height: 100vh;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #f4efe2;
+            background:
+              linear-gradient(116deg, rgba(5, 6, 7, 0.99), rgba(9, 12, 12, 0.96) 58%, rgba(28, 18, 9, 0.9)),
+              repeating-linear-gradient(135deg, rgba(255, 178, 63, 0.07) 0 1px, transparent 1px 17px);
+            font-family: 'IBM Plex Sans', Verdana, sans-serif;
+          }
+          main {
+            width: min(520px, calc(100% - 36px));
+            padding: 32px;
+            border: 1px solid rgba(235, 230, 214, 0.17);
+            border-radius: 8px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.06), transparent 42%), rgba(12, 14, 15, 0.9);
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+          }
+          h1 {
+            margin: 0 0 24px;
+            font-family: 'Bebas Neue', Impact, sans-serif;
+            font-size: 5.6rem;
+            font-weight: 400;
+            line-height: 0.9;
+          }
+          nav {
+            display: grid;
+            gap: 12px;
+          }
+          a {
+            min-height: 58px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 18px;
+            border: 1px solid rgba(255, 178, 63, 0.46);
+            border-radius: 6px;
+            color: #f4efe2;
+            background: rgba(255,255,255,0.055);
+            font: 800 0.9rem 'JetBrains Mono', 'Courier New', monospace;
+            letter-spacing: 0.08em;
+            text-decoration: none;
+          }
+          a::after { content: '>'; color: #ffb23f; font-size: 1.5rem; }
+          a:hover { border-color: #26d8d8; background: rgba(38, 216, 216, 0.1); }
         </style>
       </head>
       <body>
-        <h1>🎮 Arena FPS</h1>
-        <a href="/host">HOST (Desktop)</a>
-        <a href="/controller">CONTROLLER (Mobile)</a>
+        <main>
+          <h1>Arena FPS</h1>
+          <nav>
+            <a href="/host">HOST DISPLAY</a>
+            <a href="/controller">MOBILE CONTROLLER</a>
+          </nav>
+        </main>
       </body>
     </html>
   `);
@@ -552,7 +598,7 @@ server.listen(config.SERVER_PORT, '0.0.0.0', () => {
   
   console.log('');
   console.log('='.repeat(50));
-  console.log('🎮 MULTIPLAYER FPS SERVER STARTED');
+  console.log('MULTIPLAYER FPS SERVER STARTED');
   console.log('='.repeat(50));
   console.log(`Local:    http://localhost:${config.SERVER_PORT}`);
   console.log(`Network:  http://${ip}:${config.SERVER_PORT}`);

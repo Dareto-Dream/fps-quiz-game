@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   applyMapMovement,
   applyArenaMovement,
+  calculateLookRotation,
   calculateMovementDelta,
   clampArenaPosition,
   sanitizePlayerInput
@@ -51,6 +52,64 @@ test('diagonal movement is normalized to configured speed', () => {
   });
 
   assert.ok(Math.abs(Math.hypot(delta.x, delta.z) - 8) < 0.000001);
+});
+
+test('forward and strafe movement follow yawed camera orientation', () => {
+  const forward = calculateMovementDelta({
+    rotationY: Math.PI / 2,
+    moveX: 0,
+    moveY: -1,
+    speed: 8,
+    deltaTime: 0.5
+  });
+  const strafeRight = calculateMovementDelta({
+    rotationY: Math.PI / 2,
+    moveX: 1,
+    moveY: 0,
+    speed: 8,
+    deltaTime: 0.5
+  });
+
+  assert.ok(Math.abs(forward.x + 4) < 0.000001);
+  assert.ok(Math.abs(forward.z) < 0.000001);
+  assert.ok(Math.abs(strafeRight.x) < 0.000001);
+  assert.ok(Math.abs(strafeRight.z + 4) < 0.000001);
+});
+
+test('look rotation matches legacy input scale across frame rates', () => {
+  const oneTick = calculateLookRotation({
+    rotationX: 0,
+    rotationY: 0,
+    lookDeltaX: 0.05,
+    lookDeltaY: -0.03,
+    sensitivity: 0.003,
+    turnRate: 30,
+    deltaTime: 1 / 30
+  });
+
+  const halfTick = calculateLookRotation({
+    rotationX: 0,
+    rotationY: 0,
+    lookDeltaX: 0.05,
+    lookDeltaY: -0.03,
+    sensitivity: 0.003,
+    turnRate: 30,
+    deltaTime: 1 / 60
+  });
+  const twoHalfTicks = calculateLookRotation({
+    rotationX: halfTick.x,
+    rotationY: halfTick.y,
+    lookDeltaX: 0.05,
+    lookDeltaY: -0.03,
+    sensitivity: 0.003,
+    turnRate: 30,
+    deltaTime: 1 / 60
+  });
+
+  assert.ok(Math.abs(oneTick.y + 0.015) < 0.000001);
+  assert.ok(Math.abs(oneTick.x - 0.009) < 0.000001);
+  assert.ok(Math.abs(twoHalfTicks.y - oneTick.y) < 0.000001);
+  assert.ok(Math.abs(twoHalfTicks.x - oneTick.x) < 0.000001);
 });
 
 test('arena clamp respects width and depth independently', () => {

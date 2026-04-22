@@ -16,6 +16,34 @@ export function sanitizePlayerInput(input = {}) {
   };
 }
 
+export function normalizeAngleRadians(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.atan2(Math.sin(numeric), Math.cos(numeric));
+}
+
+export function calculateLookRotation({
+  rotationX = 0,
+  rotationY = 0,
+  lookDeltaX = 0,
+  lookDeltaY = 0,
+  sensitivity = 0.003,
+  turnRate = 30,
+  deltaTime = 0,
+  maxPitch = Math.PI / 3
+}) {
+  const safeSensitivity = Math.max(0, Number(sensitivity) || 0);
+  const safeTurnRate = Math.max(0, Number(turnRate) || 0);
+  const safeDeltaTime = Math.max(0, Number(deltaTime) || 0);
+  const safeMaxPitch = Math.max(0, Number(maxPitch) || 0);
+  const scale = safeSensitivity * safeTurnRate * 100 * safeDeltaTime;
+
+  return {
+    x: clampFiniteNumber(rotationX - clampFiniteNumber(lookDeltaY, -1, 1, 0) * scale, -safeMaxPitch, safeMaxPitch, 0),
+    y: normalizeAngleRadians(rotationY - clampFiniteNumber(lookDeltaX, -1, 1, 0) * scale)
+  };
+}
+
 export function calculateMovementDelta({ rotationY = 0, moveX = 0, moveY = 0, speed = 0, deltaTime = 0 }) {
   const safeMoveX = clampFiniteNumber(moveX, -1, 1, 0);
   const safeMoveY = clampFiniteNumber(moveY, -1, 1, 0);

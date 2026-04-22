@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { applyMapMovement } from '../shared/movement.mjs';
+import { applyMapMovement, calculateLookRotation, normalizeAngleRadians } from '../shared/movement.mjs';
 import { buildMapScene, disposeMapScene, getArenaConfig } from '../shared/map-renderer.mjs';
 
 // ============================================
@@ -30,11 +30,14 @@ let matchSyncAt = 0;
 let matchTimerActive = false;
 let lastTimerWholeSeconds = null;
 let moveSpeed = 8;
+let lookSensitivity = 0.003;
+let inputRate = 30;
 
 // Player position/rotation (synced from host)
 let myPosition = new THREE.Vector3(0, 0, 0);
 let myRotationY = 0; // Horizontal rotation
 let myRotationX = 0; // Vertical rotation (pitch)
+let hasSyncedCameraRotation = false;
 
 // Other players
 let otherPlayers = {};
@@ -109,6 +112,8 @@ async function loadClientConfig() {
     const response = await fetch('/api/config');
     const serverConfig = await response.json();
     moveSpeed = Number(serverConfig.MOVE_SPEED) || moveSpeed;
+    lookSensitivity = Number(serverConfig.LOOK_SENSITIVITY) || lookSensitivity;
+    inputRate = Number(serverConfig.INPUT_RATE) || inputRate;
     initializeMaps(serverConfig);
   } catch (error) {
     console.log('Using default controller config');
@@ -565,6 +570,7 @@ function handleGameStarted(data) {
   }
 
   matchStarted = true;
+  hasSyncedCameraRotation = false;
 
   document.getElementById('lobby-wait-screen').style.display = 'none';
   document.getElementById('game-screen').style.display = 'block';
@@ -708,16 +714,14 @@ function handleFullState(data) {
     const distance = camera.position.distanceTo(serverPos);
     
     // Only snap if we're WAY off (> 2 units), otherwise smoothly lerp
+    const snappedPosition = distance > 2;
     if (distance > 2) {
       camera.position.set(myData.x, myData.y + 1.7, myData.z);
     } else {
       camera.position.lerp(serverPos.setY(myData.y + 1.7), 0.3);
     }
     
-    // Store server rotation for reference but don't override local camera rotation
-    // This prevents fighting between client and server
-    myRotationY = myData.rotY;
-    myRotationX = myData.rotX;
+    syncCameraRotationFromServer(myData, { force: snappedPosition });
   }
   
   // Update other players
@@ -736,6 +740,24 @@ function handleFullState(data) {
       }
     }
   }
+}
+
+function syncCameraRotationFromServer(data, { force = false } = {}) {
+  if (!camera) return;
+
+  const serverRotationX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, Number(data.rotX) || 0));
+  const serverRotationY = normalizeAngleRadians(data.rotY);
+  const yawError = Math.abs(normalizeAngleRadians(serverRotationY - camera.rotation.y));
+  const pitchError = Math.abs(serverRotationX - camera.rotation.x);
+  const shouldSnap = force || !hasSyncedCameraRotation || yawError > Math.PI / 3 || pitchError > Math.PI / 6;
+
+  if (shouldSnap) {
+    camera.rotation.set(serverRotationX, serverRotationY, 0, 'YXZ');
+  }
+
+  myRotationY = serverRotationY;
+  myRotationX = serverRotationX;
+  hasSyncedCameraRotation = true;
 }
 
 function updateOtherPlayer(id, data) {
@@ -807,6 +829,7 @@ function handlePlayerRespawned(data) {
     isAlive = true;
     myHealth = data.health;
     myAmmo = data.ammo;
+    hasSyncedCameraRotation = false;
     
     // Clear respawn countdown
     if (window.respawnInterval) {
@@ -1040,9 +1063,17 @@ function animate() {
   
   // Apply look rotation locally for responsive feel
   if (lookDeltaX !== 0 || lookDeltaY !== 0) {
-    camera.rotation.y -= lookDeltaX;
-    camera.rotation.x -= lookDeltaY;
-    camera.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, camera.rotation.x));
+    const nextRotation = calculateLookRotation({
+      rotationX: camera.rotation.x,
+      rotationY: camera.rotation.y,
+      lookDeltaX,
+      lookDeltaY,
+      sensitivity: lookSensitivity,
+      turnRate: inputRate,
+      deltaTime: delta
+    });
+    camera.rotation.x = nextRotation.x;
+    camera.rotation.y = nextRotation.y;
   }
   
   // Handle shooting visual effects

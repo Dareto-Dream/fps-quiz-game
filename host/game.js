@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { applyMapMovement, sanitizePlayerInput } from '../shared/movement.mjs';
+import { applyMapMovement, calculateLookRotation, sanitizePlayerInput } from '../shared/movement.mjs';
 import { buildMapScene, disposeMapScene, getArenaConfig } from '../shared/map-renderer.mjs';
 
 // ============================================
@@ -15,6 +15,7 @@ const CONFIG = {
   SPAWN_PROTECTION_TIME: 2,
   MOVE_SPEED: 8,
   LOOK_SENSITIVITY: 0.003,
+  INPUT_RATE: 30,
   MATCH_DURATION: 300,
   STREAK_THRESHOLD: 3,
   QUIZ_REWARDS: { 0: 0, 1: 3, 2: 5, 3: 7 },
@@ -663,10 +664,18 @@ function updateAlivePlayer(player, deltaTime) {
     player.body.material.emissiveIntensity = 0;
   }
   
-  // Apply rotation from input FIRST
-  player.rotation.y -= player.lastInput.lookDeltaX * CONFIG.LOOK_SENSITIVITY * 100;
-  player.rotation.x -= player.lastInput.lookDeltaY * CONFIG.LOOK_SENSITIVITY * 100;
-  player.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, player.rotation.x));
+  // Apply rotation from input first so movement and shooting use the same facing for this tick.
+  const nextRotation = calculateLookRotation({
+    rotationX: player.rotation.x,
+    rotationY: player.rotation.y,
+    lookDeltaX: player.lastInput.lookDeltaX,
+    lookDeltaY: player.lastInput.lookDeltaY,
+    sensitivity: CONFIG.LOOK_SENSITIVITY,
+    turnRate: CONFIG.INPUT_RATE,
+    deltaTime
+  });
+  player.rotation.x = nextRotation.x;
+  player.rotation.y = nextRotation.y;
   
   // Apply rotation to group
   player.group.rotation.y = player.rotation.y;
@@ -698,9 +707,7 @@ function updateAlivePlayer(player, deltaTime) {
     }
   }
   
-  // Reset look deltas (they're deltas, not absolute)
-  player.lastInput.lookDeltaX = 0;
-  player.lastInput.lookDeltaY = 0;
+  // Look input is a held stick value, like movement. It is cleared by the next zero input packet.
 }
 
 function updateDeadPlayer(player, deltaTime) {

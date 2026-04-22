@@ -32,12 +32,22 @@ let lastTimerWholeSeconds = null;
 let moveSpeed = 8;
 let lookSensitivity = 0.003;
 let inputRate = 30;
+const CAMERA_EYE_HEIGHT = 1.7;
+const MAX_FRAME_DELTA = 0.05;
+const SERVER_POSITION_SNAP_DISTANCE = 3;
+const SERVER_POSITION_DEADZONE = 0.35;
+const SERVER_POSITION_RECONCILE_RATE_MOVING = 3;
+const SERVER_POSITION_RECONCILE_RATE_IDLE = 12;
+const OTHER_PLAYER_INTERPOLATION_RATE = 14;
 
 // Player position/rotation (synced from host)
 let myPosition = new THREE.Vector3(0, 0, 0);
 let myRotationY = 0; // Horizontal rotation
 let myRotationX = 0; // Vertical rotation (pitch)
+let hasSyncedCameraPosition = false;
 let hasSyncedCameraRotation = false;
+let serverCameraTarget = null;
+let serverCameraSnapPending = false;
 
 // Other players
 let otherPlayers = {};
@@ -570,7 +580,10 @@ function handleGameStarted(data) {
   }
 
   matchStarted = true;
+  hasSyncedCameraPosition = false;
   hasSyncedCameraRotation = false;
+  serverCameraTarget = null;
+  serverCameraSnapPending = false;
 
   document.getElementById('lobby-wait-screen').style.display = 'none';
   document.getElementById('game-screen').style.display = 'block';
@@ -605,7 +618,7 @@ function initThreeJS() {
   
   // Camera (first person)
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 1.7, 0); // Eye height
+  camera.position.set(0, CAMERA_EYE_HEIGHT, 0); // Eye height
   camera.rotation.order = 'YXZ';
   
   // Create first-person gun mesh (attached to camera)
@@ -708,19 +721,19 @@ function handleFullState(data) {
   // Update my position/rotation from host
   if (data.players && data.players[playerId]) {
     const myData = data.players[playerId];
-    
-    // Smoothly interpolate position to reduce snapping
-    const serverPos = new THREE.Vector3(myData.x, myData.y, myData.z);
-    const distance = camera.position.distanceTo(serverPos);
-    
-    // Only snap if we're WAY off (> 2 units), otherwise smoothly lerp
-    const snappedPosition = distance > 2;
-    if (distance > 2) {
-      camera.position.set(myData.x, myData.y + 1.7, myData.z);
+    myPosition.set(Number(myData.x) || 0, Number(myData.y) || 0, Number(myData.z) || 0);
+
+    const serverPos = getCameraPositionFromPlayerData(myData);
+    if (serverCameraTarget) {
+      serverCameraTarget.copy(serverPos);
     } else {
-      camera.position.lerp(serverPos.setY(myData.y + 1.7), 0.3);
+      serverCameraTarget = serverPos.clone();
     }
-    
+
+    const positionError = camera ? getHorizontalDistance(camera.position, serverCameraTarget) : 0;
+    const snappedPosition =
+      !camera || !hasSyncedCameraPosition || positionError > SERVER_POSITION_SNAP_DISTANCE || !isAlive;
+    serverCameraSnapPending = serverCameraSnapPending || snappedPosition;
     syncCameraRotationFromServer(myData, { force: snappedPosition });
   }
   
@@ -760,12 +773,60 @@ function syncCameraRotationFromServer(data, { force = false } = {}) {
   hasSyncedCameraRotation = true;
 }
 
+function getCameraPositionFromPlayerData(data) {
+  const x = Number(data.x);
+  const y = Number(data.y);
+  const z = Number(data.z);
+  return new THREE.Vector3(
+    Number.isFinite(x) ? x : 0,
+    (Number.isFinite(y) ? y : 0) + CAMERA_EYE_HEIGHT,
+    Number.isFinite(z) ? z : 0
+  );
+}
+
+function getHorizontalDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}
+
+function reconcileCameraPosition(deltaTime) {
+  if (!camera || !serverCameraTarget) return;
+
+  const horizontalDistance = getHorizontalDistance(camera.position, serverCameraTarget);
+  if (serverCameraSnapPending || horizontalDistance > SERVER_POSITION_SNAP_DISTANCE) {
+    camera.position.copy(serverCameraTarget);
+    serverCameraSnapPending = false;
+    hasSyncedCameraPosition = true;
+    return;
+  }
+
+  if (horizontalDistance > SERVER_POSITION_DEADZONE) {
+    const isMoving = Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001;
+    const rate = isMoving
+      ? SERVER_POSITION_RECONCILE_RATE_MOVING
+      : SERVER_POSITION_RECONCILE_RATE_IDLE;
+    const alpha = 1 - Math.exp(-rate * Math.max(0, deltaTime));
+    camera.position.lerp(serverCameraTarget, alpha);
+  }
+
+  camera.position.y = serverCameraTarget.y;
+  hasSyncedCameraPosition = true;
+}
+
 function updateOtherPlayer(id, data) {
+  const targetPosition = new THREE.Vector3(
+    Number(data.x) || 0,
+    (Number(data.y) || 0) + 0.8,
+    Number(data.z) || 0
+  );
+  const targetRotationY = normalizeAngleRadians(data.rotY);
+
   if (!otherPlayers[id]) {
     // Create new player mesh
     const geometry = new THREE.CylinderGeometry(0.4, 0.4, 1.6, 8);
     const material = new THREE.MeshStandardMaterial({ color: data.color || 0xff0000 });
     const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.copy(targetPosition);
+    mesh.rotation.y = targetRotationY;
     
     // Add head
     const headGeometry = new THREE.SphereGeometry(0.3, 8, 8);
@@ -774,13 +835,30 @@ function updateOtherPlayer(id, data) {
     mesh.add(head);
     
     scene.add(mesh);
-    otherPlayers[id] = { mesh: mesh, color: data.color };
+    otherPlayers[id] = {
+      mesh: mesh,
+      color: data.color,
+      targetPosition: targetPosition.clone(),
+      targetRotationY
+    };
   }
   
   const player = otherPlayers[id];
-  player.mesh.position.set(data.x, data.y + 0.8, data.z);
-  player.mesh.rotation.y = data.rotY;
+  player.targetPosition.copy(targetPosition);
+  player.targetRotationY = targetRotationY;
   player.mesh.visible = data.alive;
+}
+
+function updateOtherPlayers(deltaTime) {
+  const alpha = 1 - Math.exp(-OTHER_PLAYER_INTERPOLATION_RATE * Math.max(0, deltaTime));
+
+  Object.values(otherPlayers).forEach(player => {
+    if (!player.targetPosition) return;
+
+    player.mesh.position.lerp(player.targetPosition, alpha);
+    const rotationDelta = normalizeAngleRadians(player.targetRotationY - player.mesh.rotation.y);
+    player.mesh.rotation.y = normalizeAngleRadians(player.mesh.rotation.y + rotationDelta * alpha);
+  });
 }
 
 function handleKillEvent(data) {
@@ -829,6 +907,7 @@ function handlePlayerRespawned(data) {
     isAlive = true;
     myHealth = data.health;
     myAmmo = data.ammo;
+    hasSyncedCameraPosition = false;
     hasSyncedCameraRotation = false;
     
     // Clear respawn countdown
@@ -1056,7 +1135,7 @@ function animate() {
   
   if (!renderer || !scene || !camera) return;
 
-  const delta = clock.getDelta();
+  const delta = Math.min(clock.getDelta(), MAX_FRAME_DELTA);
   const now = performance.now();
   
   tickMatchTimer();
@@ -1121,6 +1200,9 @@ function animate() {
     camera.position.x = nextPosition.x;
     camera.position.z = nextPosition.z;
   }
+
+  reconcileCameraPosition(delta);
+  updateOtherPlayers(delta);
   
   renderer.render(scene, camera);
 }

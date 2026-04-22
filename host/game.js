@@ -80,8 +80,9 @@ const overviewTarget = new THREE.Vector3(0, 0, 0);
 let audioContext;
 let sounds = {};
 
-let simulationInterval = null;
+let simulationRunning = false;
 let lastSimulationAt = 0;
+const MAX_SIMULATION_DELTA = 0.05;
 
 // Raycaster for hit detection
 const raycaster = new THREE.Raycaster();
@@ -623,11 +624,11 @@ function applyPlayerInput(data = {}) {
 // ============================================
 // GAME UPDATE
 // ============================================
-function updateGame(deltaTime) {
+function updateGame(deltaTime, elapsedTime = deltaTime) {
   if (!matchActive) return;
   
   // Update match timer
-  matchTimer -= deltaTime;
+  matchTimer -= elapsedTime;
   updateTimerDisplay();
   
   if (matchTimer <= 0) {
@@ -638,9 +639,9 @@ function updateGame(deltaTime) {
   // Update each player
   Object.values(players).forEach(player => {
     if (player.alive) {
-      updateAlivePlayer(player, deltaTime);
+      updateAlivePlayer(player, deltaTime, elapsedTime);
     } else {
-      updateDeadPlayer(player, deltaTime);
+      updateDeadPlayer(player, elapsedTime);
     }
   });
   
@@ -651,10 +652,10 @@ function updateGame(deltaTime) {
   broadcastGameState();
 }
 
-function updateAlivePlayer(player, deltaTime) {
+function updateAlivePlayer(player, deltaTime, elapsedTime = deltaTime) {
   // Update spawn protection
   if (player.spawnProtection > 0) {
-    player.spawnProtection -= deltaTime;
+    player.spawnProtection -= elapsedTime;
     // Visual indicator - pulsing
     const pulse = Math.sin(Date.now() * 0.01) * 0.5 + 0.5;
     player.body.material.emissive.setHex(0x00ff00);
@@ -1372,19 +1373,22 @@ function onWindowResize() {
 // ANIMATION LOOP
 // ============================================
 function startSimulationLoop() {
-  if (simulationInterval) return;
+  if (simulationRunning) return;
 
+  simulationRunning = true;
   lastSimulationAt = performance.now();
-  simulationInterval = setInterval(() => {
-    const now = performance.now();
-    const deltaTime = Math.min((now - lastSimulationAt) / 1000, 1);
-    lastSimulationAt = now;
-    updateGame(deltaTime);
-  }, 1000 / 60);
 }
 
 function animate() {
   requestAnimationFrame(animate);
+
+  if (simulationRunning) {
+    const now = performance.now();
+    const elapsedTime = Math.max(0, (now - lastSimulationAt) / 1000);
+    const deltaTime = Math.min(elapsedTime, MAX_SIMULATION_DELTA);
+    lastSimulationAt = now;
+    updateGame(deltaTime, elapsedTime);
+  }
   
   // Resume audio context on first interaction
   if (audioContext.state === 'suspended') {

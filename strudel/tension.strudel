@@ -1,0 +1,20 @@
+// HIGH INTENSITY
+stack(
+  s("bd*4").gain(1.1),
+  s("sn*2").gain(1),
+  s("hh*32").gain(0.6).speed(1.2),
+
+  note("<g2 bb2 d3 f3>*4")
+    .sound("saw")
+    .distort(0.5)
+    .gain(0.9),
+
+  note("<g4 bb4 d5 f5>*4")
+    .sound("square")
+    .speed(1.5)
+    .gain(0.7),
+
+  note("<d6 f6 g6>*2")
+    .sound("fm")
+    .gain(0.6)
+)

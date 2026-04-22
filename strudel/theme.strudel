@@ -1,0 +1,25 @@
+stack(
+  s("bd*2 [bd bd] ~ bd*2")
+    .gain(1),
+
+  s("~ sn sn ~ sn ~ sn")
+    .gain(0.9),
+
+  s("hh*16")
+    .gain("0.4 0.6 0.4 0.7") // subtle variation
+    .pan(rand.range(-0.2,0.2)),
+
+  note("g2 ~ ~ g2 ~ bb2 ~ ~")
+    .sound("saw")
+    .lpf(sine.range(300, 700).slow(6))
+    .release(0.35)
+    .legato(1.15)
+    .gain(0.5),
+
+  note("g4(3,8) ~ ~ g4(3,8) ~ ~ bb4(3,8) ~")
+    .sound("triangle")
+    .release(0.25)
+    .room(0.3)
+    .size(0.6)
+    .gain(0.65)
+)

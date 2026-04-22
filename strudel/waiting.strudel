@@ -1,0 +1,12 @@
+stack(
+  s("bd ~ ~ bd ~ ~ bd ~").gain(0.8),
+  s("~ ~ sn ~ ~ sn ~ ~").gain(0.7),
+  s("hh*4").gain(0.3),
+  note("g2 ~ ~ g2 ~ bb2 ~ ~")
+    .sound("saw")
+    .lpf(sine.range(200, 800).slow(6))
+    .gain(0.5),
+  note("g4(3,8)")
+    .sound("triangle")
+    .gain(0.4)
+)

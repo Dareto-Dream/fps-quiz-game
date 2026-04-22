@@ -1,0 +1,20 @@
+// READY-UP
+stack(
+  s("bd ~ ~ bd ~ ~ bd ~").gain(0.9),
+  s("~ ~ sn ~ ~ sn ~ ~").gain(0.8),
+  s("hh*8").gain(0.4),
+
+  note("g2 ~ ~ g2 ~ bb2 ~ ~")
+    .sound("saw")
+    .lpf(sine.range(300, 1200).slow(4))
+    .gain(0.6),
+
+  note("g4(3,8) bb4(3,8)")
+    .sound("triangle")
+    .gain(0.5),
+
+  note("~ ~ d5 ~ ~ ~ f5 ~")
+    .sound("square")
+    .delay(0.25)
+    .gain(0.4)
+)

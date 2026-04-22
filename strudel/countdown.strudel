@@ -1,0 +1,20 @@
+// COUNTDOWN
+stack(
+  s("bd bd ~ bd bd ~ bd bd").gain(1),
+  s("~ sn ~ sn ~ sn ~ sn").gain(0.9),
+  s("hh*16").gain(0.5),
+
+  note("g2 g2 g2 g2 bb2 bb2 d3 d3")
+    .sound("saw")
+    .distort(0.2)
+    .gain(0.7),
+
+  note("g4*8")
+    .sound("triangle")
+    .gain(0.6),
+
+  note("<g5 bb5 d6>*2")
+    .sound("fm")
+    .speed(1.5)
+    .gain(0.5)
+)

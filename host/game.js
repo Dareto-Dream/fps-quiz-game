@@ -47,6 +47,14 @@ const CONFIG = {
 };
 
 const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
+const MATCH_COUNTDOWN_MUSIC_THRESHOLD = 15;
+const MUSIC_TRACKS = {
+  waiting: { src: '/shared/audio/waiting.ogg', volume: 0.36, loop: true },
+  readyUp: { src: '/shared/audio/ready_up.ogg', volume: 0.46, loop: false },
+  theme: { src: '/shared/audio/theme.ogg', volume: 0.38, loop: true },
+  countdown: { src: '/shared/audio/countdown.ogg', volume: 0.5, loop: false },
+  results: { src: '/shared/audio/results.ogg', volume: 0.4, loop: true }
+};
 
 // ============================================
 // GLOBAL VARIABLES
@@ -81,6 +89,10 @@ const overviewTarget = new THREE.Vector3(0, 0, 0);
 // Audio
 let audioContext;
 let sounds = {};
+let musicElements = {};
+let currentMusicTrack = null;
+let audioUnlockHandlersInstalled = false;
+let audioPlaybackUnlocked = false;
 
 let simulationRunning = false;
 let lastSimulationAt = 0;
@@ -219,6 +231,122 @@ function initAudio() {
   sounds.kill = createKillSound();
   sounds.death = createDeathSound();
   sounds.spawn = createSpawnSound();
+  initMusic();
+  installAudioUnlockHandlers();
+}
+
+function initMusic() {
+  musicElements = Object.fromEntries(
+    Object.entries(MUSIC_TRACKS).map(([name, config]) => {
+      const audio = new Audio(config.src);
+      audio.loop = config.loop;
+      audio.preload = 'auto';
+      audio.volume = config.volume;
+      return [name, audio];
+    })
+  );
+}
+
+function installAudioUnlockHandlers() {
+  if (audioUnlockHandlersInstalled) return;
+  audioUnlockHandlersInstalled = true;
+  window.addEventListener('pointerdown', resumeAudio, { passive: true });
+  window.addEventListener('click', resumeAudio);
+  window.addEventListener('keydown', resumeAudio);
+}
+
+function removeAudioUnlockHandlers() {
+  if (!audioUnlockHandlersInstalled) return;
+  audioUnlockHandlersInstalled = false;
+  window.removeEventListener('pointerdown', resumeAudio);
+  window.removeEventListener('click', resumeAudio);
+  window.removeEventListener('keydown', resumeAudio);
+}
+
+async function resumeAudio() {
+  audioPlaybackUnlocked = true;
+
+  try {
+    if (audioContext && audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+  } catch (error) {
+    return;
+  }
+
+  playCurrentMusic();
+
+  if (!audioContext || audioContext.state === 'running') {
+    removeAudioUnlockHandlers();
+  }
+}
+
+function switchMusic(trackName) {
+  if (!musicElements[trackName]) {
+    return;
+  }
+
+  if (currentMusicTrack === trackName) {
+    if (musicElements[trackName].paused) {
+      playCurrentMusic();
+    }
+    return;
+  }
+
+  const previous = musicElements[currentMusicTrack];
+  if (previous) {
+    previous.pause();
+    resetMusicTime(previous);
+  }
+
+  currentMusicTrack = trackName;
+  const next = musicElements[trackName];
+  next.loop = MUSIC_TRACKS[trackName].loop;
+  next.volume = MUSIC_TRACKS[trackName].volume;
+  resetMusicTime(next);
+  playCurrentMusic();
+}
+
+function resetMusicTime(audio) {
+  try {
+    audio.currentTime = 0;
+  } catch (error) {
+    // Some browsers block seeking before metadata is available.
+  }
+}
+
+function playCurrentMusic() {
+  const audio = musicElements[currentMusicTrack];
+  if (!audio || !audioPlaybackUnlocked) return;
+
+  const playRequest = audio.play();
+  if (playRequest && typeof playRequest.catch === 'function') {
+    playRequest.catch(() => {});
+  }
+}
+
+function updateMusicForRoomState() {
+  if (matchActive) {
+    updateMatchMusic();
+    return;
+  }
+
+  if (lobbyState && lobbyState.state === 'countdown') {
+    switchMusic('readyUp');
+    return;
+  }
+
+  if (lobbyState && lobbyState.state === 'ended') {
+    switchMusic('results');
+    return;
+  }
+
+  switchMusic('waiting');
+}
+
+function updateMatchMusic() {
+  if (!matchActive) return;
+  switchMusic(matchTimer <= MATCH_COUNTDOWN_MUSIC_THRESHOLD ? 'countdown' : 'theme');
 }
 
 function createShootSound() {
@@ -330,6 +458,8 @@ function initLobbyControls() {
 
   startButton.addEventListener('click', () => {
     if (!socket || !roomCode) return;
+    resumeAudio();
+    switchMusic('readyUp');
     startButton.disabled = true;
     document.getElementById('start-game-message').textContent = 'Starting countdown...';
     socket.emit('start-game');
@@ -379,6 +509,7 @@ function initSocket() {
   socket.on('start-error', (data) => {
     document.getElementById('start-game-message').textContent = data.message || 'Unable to start match';
     updateLobbyStartState();
+    updateMusicForRoomState();
   });
   
   socket.on('player-connected', (data) => {
@@ -1001,6 +1132,7 @@ function updateLobbyFromRoomCreated(data) {
   applyMapFromRoomData(data, { repositionPlayers: true });
   applyLobbySettings(data.settings || lobbySettings, data.maxAllowedPlayers);
   updateLobbyStartState();
+  updateMusicForRoomState();
 }
 
 function updateJoinQr(url) {
@@ -1032,6 +1164,7 @@ function handleLobbyState(data) {
   renderLobbyPlayers(data.players || []);
   updatePlayerCount();
   updateLobbyStartState();
+  updateMusicForRoomState();
 }
 
 function handleGameStarted(data) {
@@ -1050,6 +1183,7 @@ function handleGameStarted(data) {
 
   updateTimerDisplay();
   updatePlayerCount();
+  updateMatchMusic();
 }
 
 function applyMapFromRoomData(data = {}, options = {}) {
@@ -1287,6 +1421,8 @@ function updateTimerDisplay() {
   } else {
     timerEl.classList.remove('warning');
   }
+
+  updateMatchMusic();
 }
 
 function addKillFeed(killerName, victimName, killerColor, victimColor) {
@@ -1370,6 +1506,7 @@ function broadcastGameState() {
 // ============================================
 function endMatch() {
   matchActive = false;
+  switchMusic('results');
   playSound('death');
   
   // Find winner
@@ -1431,6 +1568,7 @@ function restartMatch() {
   matchTimer = CONFIG.MATCH_DURATION;
   matchActive = true;
   streakLeader = null;
+  updateMatchMusic();
   socket.emit('restart-game', {
     settings: lobbySettings,
     matchDuration: CONFIG.MATCH_DURATION,
@@ -1470,11 +1608,6 @@ function animate() {
     const deltaTime = Math.min(elapsedTime, MAX_SIMULATION_DELTA);
     lastSimulationAt = now;
     updateGame(deltaTime, elapsedTime);
-  }
-  
-  // Resume audio context on first interaction
-  if (audioContext.state === 'suspended') {
-    document.addEventListener('click', () => audioContext.resume(), { once: true });
   }
 
   renderer.render(scene, camera);

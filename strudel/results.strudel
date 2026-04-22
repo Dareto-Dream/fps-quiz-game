@@ -1,0 +1,15 @@
+// RESULTS
+stack(
+  s("bd ~ ~ ~ bd ~ ~ ~").gain(0.6),
+  s("~ ~ sn ~ ~ ~ sn ~").gain(0.5),
+  s("hh*4").gain(0.2),
+
+  note("g2 ~ ~ ~ bb2 ~ ~ ~")
+    .sound("saw")
+    .lpf(400)
+    .gain(0.4),
+
+  note("g4 ~ d5 ~")
+    .sound("triangle")
+    .gain(0.4)
+)

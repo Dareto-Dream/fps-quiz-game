@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { applyArenaMovement, sanitizePlayerInput } from '../shared/movement.mjs';
+import { applyMapMovement, sanitizePlayerInput } from '../shared/movement.mjs';
+import { buildMapScene, disposeMapScene, getArenaConfig } from '../shared/map-renderer.mjs';
 
 // ============================================
 // GAME CONFIGURATION
@@ -17,6 +18,9 @@ const CONFIG = {
   MATCH_DURATION: 300,
   STREAK_THRESHOLD: 3,
   QUIZ_REWARDS: { 0: 0, 1: 3, 2: 5, 3: 7 },
+  DEFAULT_MAP_ID: 'classic',
+  MAPS: [],
+  MAP: null,
   ARENA: { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 },
   MAX_PLAYERS: 24,
   SPAWN_POINTS: [
@@ -58,8 +62,12 @@ let lobbyState = null;
 let lobbySettings = {
   maxPlayers: CONFIG.MAX_PLAYERS,
   minPlayers: 2,
-  matchDuration: CONFIG.MATCH_DURATION
+  matchDuration: CONFIG.MATCH_DURATION,
+  mapId: CONFIG.DEFAULT_MAP_ID
 };
+let mapLibrary = [];
+let activeMap = null;
+let mapRuntime = null;
 
 // Camera state
 const CameraState = { OVERVIEW: 'overview', FOLLOWING: 'following' };
@@ -86,8 +94,10 @@ async function init() {
     const response = await fetch('/api/config');
     const serverConfig = await response.json();
     Object.assign(CONFIG, serverConfig);
+    initializeMaps(serverConfig);
   } catch (e) {
     console.log('Using default config');
+    initializeMaps(CONFIG);
   }
   
   initThreeJS();
@@ -100,6 +110,63 @@ async function init() {
   // Start render loop
   animate();
   startSimulationLoop();
+}
+
+function initializeMaps(serverConfig = {}) {
+  mapLibrary = Array.isArray(serverConfig.MAPS) ? serverConfig.MAPS : [];
+  activeMap = serverConfig.MAP || getMapById(serverConfig.DEFAULT_MAP_ID) || getFallbackMap();
+  CONFIG.DEFAULT_MAP_ID = serverConfig.DEFAULT_MAP_ID || activeMap.id;
+  applyActiveMap(activeMap, { rebuild: false });
+}
+
+function getMapById(mapId) {
+  return mapLibrary.find(map => map.id === mapId) || null;
+}
+
+function getMapFromPayload(data = {}) {
+  return data.map || getMapById(data.settings && data.settings.mapId) || getMapById(data.mapId);
+}
+
+function applyActiveMap(map, { rebuild = true, repositionPlayers = false } = {}) {
+  activeMap = map || activeMap || getFallbackMap();
+  const arena = getArenaConfig(activeMap);
+  CONFIG.ARENA = arena;
+  CONFIG.SPAWN_POINTS = Array.isArray(activeMap.spawns) ? activeMap.spawns : [{ x: 0, z: 0, yaw: 0 }];
+  lobbySettings.mapId = activeMap.id || CONFIG.DEFAULT_MAP_ID;
+  updateOverviewCameraDefaults();
+
+  if (scene && rebuild) {
+    createArena();
+  }
+
+  if (repositionPlayers) {
+    repositionPlayersOnCurrentMap();
+  }
+}
+
+function updateOverviewCameraDefaults() {
+  const longestSide = Math.max(CONFIG.ARENA.WIDTH || 50, CONFIG.ARENA.DEPTH || 50);
+  overviewPosition.set(0, Math.max(35, longestSide * 0.72), Math.max(35, longestSide * 0.72));
+  overviewTarget.set(0, 0, 0);
+}
+
+function repositionPlayersOnCurrentMap() {
+  Object.values(players).forEach((player, index) => {
+    const spawnPoint = getSpawnPoint(index);
+    player.group.position.set(spawnPoint.x, 0, spawnPoint.z);
+    player.rotation.set(0, spawnPoint.yaw || Math.random() * Math.PI * 2, 0);
+    player.group.rotation.y = player.rotation.y;
+  });
+}
+
+function getFallbackMap() {
+  return {
+    id: 'classic',
+    name: 'Classic Arena',
+    arena: { width: 50, depth: 50, wallHeight: 10 },
+    spawns: CONFIG.SPAWN_POINTS || [{ x: 0, z: 0, yaw: 0 }],
+    obstacles: []
+  };
 }
 
 function initThreeJS() {
@@ -270,8 +337,11 @@ function initLobbyControls() {
   const settingInputs = [
     document.getElementById('setting-max-players'),
     document.getElementById('setting-min-players'),
-    document.getElementById('setting-match-minutes')
+    document.getElementById('setting-match-minutes'),
+    document.getElementById('setting-map')
   ];
+
+  populateMapSelect();
 
   startButton.addEventListener('click', () => {
     if (!socket || !roomCode) return;
@@ -362,156 +432,15 @@ function initSocket() {
 // ARENA CREATION
 // ============================================
 function createArena() {
-  const { WIDTH, DEPTH, WALL_HEIGHT } = CONFIG.ARENA;
-  
-  // Floor
-  const floorGeometry = new THREE.PlaneGeometry(WIDTH, DEPTH);
-  const floorMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x111312,
-    roughness: 0.74,
-    metalness: 0.18
+  disposeMapScene(mapRuntime);
+  mapRuntime = buildMapScene({
+    THREE,
+    scene,
+    map: activeMap,
+    shadows: true,
+    lightIntensity: 0.55
   });
-  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-  
-  // Grid lines on floor
-  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0xffb23f, 0x27302f);
-  gridHelper.position.y = 0.01;
-  scene.add(gridHelper);
-
-  const stripMaterial = new THREE.MeshBasicMaterial({
-    color: 0x26d8d8,
-    transparent: true,
-    opacity: 0.72
-  });
-  [
-    { x: 0, z: -DEPTH / 2 + 2, w: WIDTH - 7, d: 0.08 },
-    { x: 0, z: DEPTH / 2 - 2, w: WIDTH - 7, d: 0.08 },
-    { x: -WIDTH / 2 + 2, z: 0, w: 0.08, d: DEPTH - 7 },
-    { x: WIDTH / 2 - 2, z: 0, w: 0.08, d: DEPTH - 7 }
-  ].forEach(strip => {
-    const marker = new THREE.Mesh(new THREE.BoxGeometry(strip.w, 0.035, strip.d), stripMaterial);
-    marker.position.set(strip.x, 0.035, strip.z);
-    scene.add(marker);
-  });
-  
-  // Wall material
-  const wallMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x202322,
-    roughness: 0.58,
-    metalness: 0.34
-  });
-  
-  // Walls
-  const wallThickness = 1;
-  
-  // North wall
-  const northWall = new THREE.Mesh(
-    new THREE.BoxGeometry(WIDTH + wallThickness * 2, WALL_HEIGHT, wallThickness),
-    wallMaterial
-  );
-  northWall.position.set(0, WALL_HEIGHT / 2, -DEPTH / 2 - wallThickness / 2);
-  northWall.castShadow = true;
-  northWall.receiveShadow = true;
-  scene.add(northWall);
-  
-  // South wall
-  const southWall = northWall.clone();
-  southWall.position.z = DEPTH / 2 + wallThickness / 2;
-  scene.add(southWall);
-  
-  // East wall
-  const eastWall = new THREE.Mesh(
-    new THREE.BoxGeometry(wallThickness, WALL_HEIGHT, DEPTH),
-    wallMaterial
-  );
-  eastWall.position.set(WIDTH / 2 + wallThickness / 2, WALL_HEIGHT / 2, 0);
-  eastWall.castShadow = true;
-  eastWall.receiveShadow = true;
-  scene.add(eastWall);
-  
-  // West wall
-  const westWall = eastWall.clone();
-  westWall.position.x = -WIDTH / 2 - wallThickness / 2;
-  scene.add(westWall);
-
-  [
-    [-WIDTH / 2 + 4, 3, -DEPTH / 2 + 4],
-    [WIDTH / 2 - 4, 3, -DEPTH / 2 + 4],
-    [-WIDTH / 2 + 4, 3, DEPTH / 2 - 4],
-    [WIDTH / 2 - 4, 3, DEPTH / 2 - 4]
-  ].forEach(([x, y, z], index) => {
-    const light = new THREE.PointLight(index % 2 === 0 ? 0xffb23f : 0x26d8d8, 0.55, 18, 1.7);
-    light.position.set(x, y, z);
-    scene.add(light);
-  });
-  
-  // Interior obstacles
-  createObstacles();
-}
-
-function createObstacles() {
-  const obstacleMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x3a3325,
-    roughness: 0.5,
-    metalness: 0.46,
-    emissive: 0x1b1006,
-    emissiveIntensity: 0.08
-  });
-  
-  // Center pillar
-  const centerPillar = new THREE.Mesh(
-    new THREE.BoxGeometry(4, 6, 4),
-    obstacleMaterial
-  );
-  centerPillar.position.set(0, 3, 0);
-  centerPillar.castShadow = true;
-  centerPillar.receiveShadow = true;
-  centerPillar.userData.isObstacle = true;
-  scene.add(centerPillar);
-  
-  // Corner crates
-  const cratePositions = [
-    { x: -15, z: -15 },
-    { x: 15, z: -15 },
-    { x: -15, z: 15 },
-    { x: 15, z: 15 }
-  ];
-  
-  cratePositions.forEach(pos => {
-    const crate = new THREE.Mesh(
-      new THREE.BoxGeometry(3, 3, 3),
-      obstacleMaterial
-    );
-    crate.position.set(pos.x, 1.5, pos.z);
-    crate.castShadow = true;
-    crate.receiveShadow = true;
-    crate.userData.isObstacle = true;
-    scene.add(crate);
-  });
-  
-  // Low barriers
-  const barrierPositions = [
-    { x: -10, z: 0, rotY: 0 },
-    { x: 10, z: 0, rotY: 0 },
-    { x: 0, z: -10, rotY: Math.PI / 2 },
-    { x: 0, z: 10, rotY: Math.PI / 2 }
-  ];
-  
-  barrierPositions.forEach(pos => {
-    const barrier = new THREE.Mesh(
-      new THREE.BoxGeometry(6, 2, 1),
-      obstacleMaterial
-    );
-    barrier.position.set(pos.x, 1, pos.z);
-    barrier.rotation.y = pos.rotY;
-    barrier.castShadow = true;
-    barrier.receiveShadow = true;
-    barrier.userData.isObstacle = true;
-    scene.add(barrier);
-  });
+  Object.assign(CONFIG.ARENA, mapRuntime.arena);
 }
 
 // ============================================
@@ -578,7 +507,7 @@ function createPlayer(playerId, color, colorName) {
     id: playerId,
     colorName: colorName,
     color: color,
-    rotation: new THREE.Euler(0, 0, 0, 'YXZ'),
+    rotation: new THREE.Euler(0, spawnPoint.yaw || 0, 0, 'YXZ'),
     velocity: new THREE.Vector3(),
     health: CONFIG.PLAYER_MAX_HEALTH,
     maxHealth: CONFIG.PLAYER_MAX_HEALTH,
@@ -605,6 +534,7 @@ function createPlayer(playerId, color, colorName) {
       lastShootTime: 0
     }
   };
+  playerGroup.rotation.y = players[playerId].rotation.y;
   
   updateLeaderboard();
   updateLobbyStartState();
@@ -621,17 +551,21 @@ function removePlayer(playerId) {
   }
 }
 
-function getRandomSpawnPoint() {
+function getSpawnPoint(index = Math.floor(Math.random() * CONFIG.SPAWN_POINTS.length)) {
   const spawnPoints = CONFIG.SPAWN_POINTS;
-  const point = spawnPoints[Math.floor(Math.random() * spawnPoints.length)];
-  return { x: point.x, z: point.z };
+  const point = spawnPoints[index % spawnPoints.length] || { x: 0, z: 0, yaw: 0 };
+  return { x: point.x, z: point.z, yaw: point.yaw || 0 };
+}
+
+function getRandomSpawnPoint() {
+  return getSpawnPoint();
 }
 
 function respawnPlayer(player) {
   const spawnPoint = getRandomSpawnPoint();
   // Directly set position on the group
   player.group.position.set(spawnPoint.x, 0, spawnPoint.z);
-  player.rotation.set(0, Math.random() * Math.PI * 2, 0);
+  player.rotation.set(0, spawnPoint.yaw || Math.random() * Math.PI * 2, 0);
   player.group.rotation.y = player.rotation.y;
   player.health = CONFIG.PLAYER_MAX_HEALTH;
   player.ammo = CONFIG.PLAYER_START_AMMO;
@@ -739,7 +673,7 @@ function updateAlivePlayer(player, deltaTime) {
   
   // Calculate movement using UPDATED rotation
   if (Math.abs(player.lastInput.moveX) > 0.001 || Math.abs(player.lastInput.moveY) > 0.001) {
-    const nextPosition = applyArenaMovement({
+    const nextPosition = applyMapMovement({
       x: player.group.position.x,
       z: player.group.position.z,
       rotationY: player.rotation.y,
@@ -747,6 +681,7 @@ function updateAlivePlayer(player, deltaTime) {
       moveY: player.lastInput.moveY,
       speed: CONFIG.MOVE_SPEED,
       deltaTime,
+      map: activeMap,
       arena: CONFIG.ARENA
     });
 
@@ -809,10 +744,19 @@ function processShot(playerId) {
     }
   });
   
-  const intersects = raycaster.intersectObjects(otherPlayerMeshes);
+  const playerIntersects = raycaster.intersectObjects(otherPlayerMeshes);
+  const blockerIntersects = mapRuntime && mapRuntime.shotBlockers
+    ? raycaster.intersectObjects(mapRuntime.shotBlockers)
+    : [];
+  const nearestPlayerHit = playerIntersects[0];
+  const nearestBlockerHit = blockerIntersects[0];
+
+  if (nearestBlockerHit && (!nearestPlayerHit || nearestBlockerHit.distance < nearestPlayerHit.distance)) {
+    return;
+  }
   
-  if (intersects.length > 0) {
-    const hitMesh = intersects[0].object;
+  if (nearestPlayerHit) {
+    const hitMesh = nearestPlayerHit.object;
     const hitPlayerId = hitMesh.userData.playerId;
     const hitPlayer = players[hitPlayerId];
     
@@ -825,7 +769,7 @@ function processShot(playerId) {
       playSound('hit');
       
       // Create hit effect
-      createHitEffect(intersects[0].point);
+      createHitEffect(nearestPlayerHit.point);
       
       if (hitPlayer.health <= 0) {
         // Kill confirmed
@@ -1008,6 +952,7 @@ function updateLobbyFromRoomCreated(data) {
   document.getElementById('lobby-room-code').textContent = data.roomCode || '----';
   document.getElementById('lobby-server-ip').textContent = `${data.hostIP}:${data.port}`;
   document.getElementById('lobby-join-url').textContent = joinUrl;
+  applyMapFromRoomData(data, { repositionPlayers: true });
   applyLobbySettings(data.settings || lobbySettings, data.maxAllowedPlayers);
   updateLobbyStartState();
 }
@@ -1015,10 +960,12 @@ function updateLobbyFromRoomCreated(data) {
 function handleLobbyState(data) {
   lobbyState = data;
   lobbySettings = data.settings || lobbySettings;
+  applyMapFromRoomData(data, { repositionPlayers: !matchActive });
 
   if (data.state === 'playing' && !matchActive) {
     handleGameStarted({
       settings: data.settings,
+      map: data.map,
       matchDuration: data.settings && data.settings.matchDuration,
       startedAt: data.startedAt
     });
@@ -1036,6 +983,7 @@ function handleLobbyState(data) {
 
 function handleGameStarted(data) {
   lobbySettings = data.settings || lobbySettings;
+  applyMapFromRoomData(data, { repositionPlayers: false });
   const matchDuration = data.matchDuration || lobbySettings.matchDuration || CONFIG.MATCH_DURATION;
   const elapsedSinceStart = data.startedAt ? Math.max(0, (Date.now() - data.startedAt) / 1000) : 0;
   CONFIG.MATCH_DURATION = matchDuration;
@@ -1050,10 +998,46 @@ function handleGameStarted(data) {
   updatePlayerCount();
 }
 
+function applyMapFromRoomData(data = {}, options = {}) {
+  const requestedMap = getMapFromPayload(data);
+  const requestedMapId = requestedMap
+    ? requestedMap.id
+    : data.settings && data.settings.mapId;
+  if (!requestedMapId) return;
+
+  const nextMap = requestedMap || getMapById(requestedMapId);
+  if (!nextMap) return;
+
+  const changed = !activeMap || activeMap.id !== nextMap.id;
+  if (changed) {
+    applyActiveMap(nextMap, {
+      rebuild: Boolean(scene),
+      repositionPlayers: Boolean(options.repositionPlayers)
+    });
+  }
+  lobbySettings.mapId = nextMap.id;
+}
+
+function populateMapSelect() {
+  const mapSelect = document.getElementById('setting-map');
+  if (!mapSelect) return;
+
+  mapSelect.replaceChildren();
+  mapLibrary.forEach(map => {
+    const option = document.createElement('option');
+    option.value = map.id;
+    option.textContent = map.name || map.id;
+    mapSelect.appendChild(option);
+  });
+
+  mapSelect.value = activeMap ? activeMap.id : CONFIG.DEFAULT_MAP_ID;
+}
+
 function applyLobbySettings(settings, maxAllowedPlayers) {
   const maxPlayersInput = document.getElementById('setting-max-players');
   const minPlayersInput = document.getElementById('setting-min-players');
   const matchMinutesInput = document.getElementById('setting-match-minutes');
+  const mapSelect = document.getElementById('setting-map');
   const maxAllowed = maxAllowedPlayers || CONFIG.MAX_PLAYERS;
   const playerCount = lobbyState ? lobbyState.playerCount : 0;
 
@@ -1065,6 +1049,9 @@ function applyLobbySettings(settings, maxAllowedPlayers) {
   minPlayersInput.value = settings.minPlayers;
 
   matchMinutesInput.value = Math.round(settings.matchDuration / 60);
+  if (mapSelect) {
+    mapSelect.value = settings.mapId || (activeMap && activeMap.id) || CONFIG.DEFAULT_MAP_ID;
+  }
 
   if (!matchActive) {
     matchTimer = settings.matchDuration;
@@ -1078,6 +1065,7 @@ function sendLobbySettings() {
   const maxPlayersInput = document.getElementById('setting-max-players');
   const minPlayersInput = document.getElementById('setting-min-players');
   const matchMinutesInput = document.getElementById('setting-match-minutes');
+  const mapSelect = document.getElementById('setting-map');
   const maxAllowed = Number.parseInt(maxPlayersInput.max, 10) || CONFIG.MAX_PLAYERS;
   const currentPlayers = lobbyState ? lobbyState.playerCount : Object.keys(players).length;
 
@@ -1088,12 +1076,14 @@ function sendLobbySettings() {
   maxPlayersInput.value = maxPlayers;
   minPlayersInput.value = minPlayers;
   matchMinutesInput.value = matchMinutes;
+  const mapId = mapSelect && mapSelect.value ? mapSelect.value : (activeMap && activeMap.id) || CONFIG.DEFAULT_MAP_ID;
 
   socket.emit('update-room-settings', {
     settings: {
       maxPlayers,
       minPlayers,
-      matchDuration: matchMinutes * 60
+      matchDuration: matchMinutes * 60,
+      mapId
     }
   });
 }

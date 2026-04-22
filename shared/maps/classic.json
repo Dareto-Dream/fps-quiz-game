@@ -1,0 +1,147 @@
+{
+  "id": "classic",
+  "name": "Classic Arena",
+  "description": "The original symmetric arena with a central pillar, corner crates, and short barriers.",
+  "arena": {
+    "width": 50,
+    "depth": 50,
+    "wallHeight": 10
+  },
+  "style": {
+    "floorColor": "#111312",
+    "wallColor": "#202322",
+    "obstacleColor": "#3a3325",
+    "accentColor": "#26d8d8",
+    "gridColor": "#ffb23f",
+    "gridSecondaryColor": "#27302f"
+  },
+  "spawns": [
+    { "x": -20, "z": -20, "yaw": 0.75 },
+    { "x": 20, "z": -20, "yaw": -0.75 },
+    { "x": -20, "z": 20, "yaw": 2.35 },
+    { "x": 20, "z": 20, "yaw": -2.35 },
+    { "x": 0, "z": -22, "yaw": 0 },
+    { "x": 0, "z": 22, "yaw": 3.14 },
+    { "x": -22, "z": 0, "yaw": 1.57 },
+    { "x": 22, "z": 0, "yaw": -1.57 },
+    { "x": -15, "z": -10, "yaw": 0.55 },
+    { "x": 15, "z": -10, "yaw": -0.55 },
+    { "x": -15, "z": 10, "yaw": 2.6 },
+    { "x": 15, "z": 10, "yaw": -2.6 },
+    { "x": -10, "z": -15, "yaw": 0.35 },
+    { "x": 10, "z": -15, "yaw": -0.35 },
+    { "x": -10, "z": 15, "yaw": 2.8 },
+    { "x": 10, "z": 15, "yaw": -2.8 },
+    { "x": -8, "z": -8, "yaw": 0.78 },
+    { "x": 8, "z": -8, "yaw": -0.78 },
+    { "x": -8, "z": 8, "yaw": 2.35 },
+    { "x": 8, "z": 8, "yaw": -2.35 },
+    { "x": -18, "z": -10, "yaw": 0.42 },
+    { "x": 18, "z": -10, "yaw": -0.42 },
+    { "x": -18, "z": 10, "yaw": 2.72 },
+    { "x": 18, "z": 10, "yaw": -2.72 }
+  ],
+  "obstacles": [
+    {
+      "id": "center-pillar",
+      "type": "box",
+      "x": 0,
+      "z": 0,
+      "width": 4,
+      "depth": 4,
+      "height": 6,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "crate-north-west",
+      "type": "box",
+      "x": -15,
+      "z": -15,
+      "width": 3,
+      "depth": 3,
+      "height": 3,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "crate-north-east",
+      "type": "box",
+      "x": 15,
+      "z": -15,
+      "width": 3,
+      "depth": 3,
+      "height": 3,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "crate-south-west",
+      "type": "box",
+      "x": -15,
+      "z": 15,
+      "width": 3,
+      "depth": 3,
+      "height": 3,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "crate-south-east",
+      "type": "box",
+      "x": 15,
+      "z": 15,
+      "width": 3,
+      "depth": 3,
+      "height": 3,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "barrier-west",
+      "type": "box",
+      "x": -10,
+      "z": 0,
+      "width": 6,
+      "depth": 1,
+      "height": 2,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "barrier-east",
+      "type": "box",
+      "x": 10,
+      "z": 0,
+      "width": 6,
+      "depth": 1,
+      "height": 2,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "barrier-north",
+      "type": "box",
+      "x": 0,
+      "z": -10,
+      "width": 6,
+      "depth": 1,
+      "height": 2,
+      "yaw": 1.5708,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "barrier-south",
+      "type": "box",
+      "x": 0,
+      "z": 10,
+      "width": 6,
+      "depth": 1,
+      "height": 2,
+      "yaw": 1.5708,
+      "collides": true,
+      "blocksShots": true
+    }
+  ]
+}

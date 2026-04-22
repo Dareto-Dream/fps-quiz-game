@@ -348,7 +348,8 @@ body:not(.lobby-active) #lobby-screen {
   gap: 8px;
 }
 
-.setting-row input {
+.setting-row input,
+.setting-row select {
   width: 100%;
   min-height: 48px;
   padding: 8px 12px;
@@ -361,7 +362,21 @@ body:not(.lobby-active) #lobby-screen {
   font-weight: 800;
 }
 
-.setting-row input:focus {
+.setting-row select {
+  appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--amber) 50%),
+    linear-gradient(135deg, var(--amber) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 50%,
+    calc(100% - 11px) 50%;
+  background-size: 7px 7px;
+  background-repeat: no-repeat;
+  padding-right: 36px;
+}
+
+.setting-row input:focus,
+.setting-row select:focus {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
 }

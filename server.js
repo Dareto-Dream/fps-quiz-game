@@ -5,6 +5,15 @@ const os = require('os');
 const path = require('path');
 const config = require('./shared/config');
 const questions = require('./shared/questions');
+const {
+  DEFAULT_MAP_ID,
+  getDefaultMap,
+  getMapById,
+  getMapManifest,
+  getMaps,
+  sanitizeMapId,
+  toLegacyArena
+} = require('./shared/map-service');
 
 const app = express();
 const server = http.createServer(app);
@@ -123,6 +132,7 @@ app.get('/favicon.ico', (req, res) => {
 
 // API endpoint to get config for clients
 app.get('/api/config', (req, res) => {
+  const defaultMap = getDefaultMap();
   res.json({
     MAX_PLAYERS: MAX_ROOM_PLAYERS,
     MIN_PLAYERS: config.MIN_PLAYERS,
@@ -137,8 +147,19 @@ app.get('/api/config', (req, res) => {
     MATCH_DURATION: config.MATCH_DURATION,
     STREAK_THRESHOLD: config.STREAK_THRESHOLD,
     QUIZ_REWARDS: config.QUIZ_REWARDS,
-    ARENA: config.ARENA,
-    SPAWN_POINTS: config.SPAWN_POINTS
+    ARENA: toLegacyArena(defaultMap.arena),
+    SPAWN_POINTS: defaultMap.spawns,
+    DEFAULT_MAP_ID,
+    MAP: defaultMap,
+    MAPS: getMaps(),
+    MAP_MANIFEST: getMapManifest()
+  });
+});
+
+app.get('/api/maps', (req, res) => {
+  res.json({
+    defaultMapId: DEFAULT_MAP_ID,
+    maps: getMapManifest()
   });
 });
 
@@ -195,7 +216,8 @@ function createDefaultRoomSettings() {
   return {
     maxPlayers,
     minPlayers: Math.min(Math.max(config.MIN_PLAYERS || 1, 1), maxPlayers),
-    matchDuration: config.MATCH_DURATION
+    matchDuration: config.MATCH_DURATION,
+    mapId: DEFAULT_MAP_ID
   };
 }
 
@@ -220,8 +242,9 @@ function sanitizeRoomSettings(settings, room) {
     MAX_MATCH_DURATION,
     current.matchDuration
   );
+  const mapId = sanitizeMapId(settings && settings.mapId, current.mapId || DEFAULT_MAP_ID);
 
-  return { maxPlayers, minPlayers, matchDuration };
+  return { maxPlayers, minPlayers, matchDuration, mapId };
 }
 
 function getLobbyState(roomCode) {
@@ -236,6 +259,7 @@ function getLobbyState(roomCode) {
     playerCount: room.playerIds.length,
     maxAllowedPlayers: MAX_ROOM_PLAYERS,
     settings: room.settings,
+    map: getMapById(room.settings.mapId),
     players: room.playerIds.map((playerId, index) => ({
       playerId,
       slot: index + 1,
@@ -361,6 +385,7 @@ io.on('connection', (socket) => {
       port: SERVER_PORT,
       joinUrl: `http://${hostIP}:${SERVER_PORT}/controller`,
       settings: rooms[roomCode].settings,
+      map: getMapById(rooms[roomCode].settings.mapId),
       maxAllowedPlayers: MAX_ROOM_PLAYERS
     });
     emitLobbyState(roomCode);
@@ -415,7 +440,8 @@ io.on('connection', (socket) => {
       colorName: colorInfo.colorName,
       roomCode: roomCode,
       state: room.state,
-      settings: room.settings
+      settings: room.settings,
+      map: getMapById(room.settings.mapId)
     });
     
     // Notify host
@@ -468,6 +494,7 @@ io.on('connection', (socket) => {
     io.to(socket.roomCode).emit('game-started', {
       roomCode: socket.roomCode,
       settings: room.settings,
+      map: getMapById(room.settings.mapId),
       matchDuration: room.settings.matchDuration,
       startedAt: room.startedAt
     });
@@ -629,6 +656,7 @@ io.on('connection', (socket) => {
     io.to(socket.roomCode).emit('game-started', {
       roomCode: socket.roomCode,
       settings: room.settings,
+      map: getMapById(room.settings.mapId),
       matchDuration: room.settings.matchDuration,
       startedAt: room.startedAt
     });

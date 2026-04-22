@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { applyArenaMovement } from '../shared/movement.mjs';
+import { applyMapMovement } from '../shared/movement.mjs';
+import { buildMapScene, disposeMapScene, getArenaConfig } from '../shared/map-renderer.mjs';
 
 // ============================================
 // GAME STATE
@@ -67,6 +68,9 @@ let gunMesh = null;
 
 // Arena config
 const ARENA = { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 };
+let mapLibrary = [];
+let activeMap = null;
+let mapRuntime = null;
 
 // ============================================
 // INITIALIZATION
@@ -105,10 +109,44 @@ async function loadClientConfig() {
     const response = await fetch('/api/config');
     const serverConfig = await response.json();
     moveSpeed = Number(serverConfig.MOVE_SPEED) || moveSpeed;
-    Object.assign(ARENA, serverConfig.ARENA || {});
+    initializeMaps(serverConfig);
   } catch (error) {
     console.log('Using default controller config');
+    initializeMaps({});
   }
+}
+
+function initializeMaps(serverConfig = {}) {
+  mapLibrary = Array.isArray(serverConfig.MAPS) ? serverConfig.MAPS : [];
+  activeMap = serverConfig.MAP || getMapById(serverConfig.DEFAULT_MAP_ID) || getFallbackMap();
+  applyActiveMap(activeMap, { rebuild: false });
+}
+
+function getMapById(mapId) {
+  return mapLibrary.find(map => map.id === mapId) || null;
+}
+
+function getMapFromPayload(data = {}) {
+  return data.map || getMapById(data.settings && data.settings.mapId) || getMapById(data.mapId);
+}
+
+function applyActiveMap(map, { rebuild = true } = {}) {
+  activeMap = map || activeMap || getFallbackMap();
+  Object.assign(ARENA, getArenaConfig(activeMap));
+
+  if (scene && rebuild) {
+    createArena();
+  }
+}
+
+function getFallbackMap() {
+  return {
+    id: 'classic',
+    name: 'Classic Arena',
+    arena: { width: 50, depth: 50, wallHeight: 10 },
+    spawns: [{ x: 0, z: 0, yaw: 0 }],
+    obstacles: []
+  };
 }
 
 function startFiring() {
@@ -417,6 +455,10 @@ function connectToServer() {
     playerColor = data.color;
     playerColorName = data.colorName;
     roomCode = data.roomCode;
+    const roomMap = getMapFromPayload(data);
+    if (roomMap) {
+      applyActiveMap(roomMap, { rebuild: Boolean(scene) });
+    }
     
     socket.io.opts.reconnection = true;
     
@@ -477,11 +519,16 @@ function showConnectionError(message) {
 
 function handleLobbyState(data) {
   lobbyState = data;
+  const roomMap = getMapFromPayload(data);
+  if (roomMap && (!activeMap || roomMap.id !== activeMap.id)) {
+    applyActiveMap(roomMap, { rebuild: Boolean(scene) });
+  }
   updateLobbyWait(data);
 
   if (data.state === 'playing' && !matchStarted) {
     handleGameStarted({
       settings: data.settings,
+      map: data.map,
       matchDuration: data.settings && data.settings.matchDuration,
       startedAt: data.startedAt
     });
@@ -512,6 +559,10 @@ function updateLobbyWait(data) {
 function handleGameStarted(data) {
   const duration = data.matchDuration || (data.settings && data.settings.matchDuration) || matchTime;
   const elapsedSinceStart = data.startedAt ? Math.max(0, (Date.now() - data.startedAt) / 1000) : 0;
+  const nextMap = getMapFromPayload(data);
+  if (nextMap) {
+    applyActiveMap(nextMap, { rebuild: Boolean(scene) });
+  }
 
   matchStarted = true;
 
@@ -595,137 +646,15 @@ function initThreeJS() {
 }
 
 function createArena() {
-  const { WIDTH, DEPTH, WALL_HEIGHT } = ARENA;
-  
-  // Floor
-  const floorGeometry = new THREE.PlaneGeometry(WIDTH, DEPTH);
-  const floorMaterial = new THREE.MeshStandardMaterial({ 
-    color: 0x111312,
-    roughness: 0.74,
-    metalness: 0.18
+  disposeMapScene(mapRuntime);
+  mapRuntime = buildMapScene({
+    THREE,
+    scene,
+    map: activeMap,
+    shadows: false,
+    lightIntensity: 0.5
   });
-
-  const floor = new THREE.Mesh(floorGeometry, floorMaterial);
-  floor.rotation.x = -Math.PI / 2;
-  scene.add(floor);
-  
-  // Grid
-  const gridHelper = new THREE.GridHelper(WIDTH, 20, 0xffb23f, 0x27302f);
-  gridHelper.position.y = 0.01;
-  scene.add(gridHelper);
-
-  const stripMaterial = new THREE.MeshBasicMaterial({
-    color: 0x26d8d8,
-    transparent: true,
-    opacity: 0.72
-  });
-  [
-    { x: 0, z: -DEPTH / 2 + 2, w: WIDTH - 7, d: 0.08 },
-    { x: 0, z: DEPTH / 2 - 2, w: WIDTH - 7, d: 0.08 },
-    { x: -WIDTH / 2 + 2, z: 0, w: 0.08, d: DEPTH - 7 },
-    { x: WIDTH / 2 - 2, z: 0, w: 0.08, d: DEPTH - 7 }
-  ].forEach(strip => {
-    const marker = new THREE.Mesh(new THREE.BoxGeometry(strip.w, 0.035, strip.d), stripMaterial);
-    marker.position.set(strip.x, 0.035, strip.z);
-    scene.add(marker);
-  });
-  
-  // Wall material
-  const wallMaterial = new THREE.MeshStandardMaterial({
-    color: 0x202322,
-    roughness: 0.58,
-    metalness: 0.34
-  });
-  
-  // Walls
-  const wallThickness = 1;
-  
-  // North wall
-  const northWall = new THREE.Mesh(
-    new THREE.BoxGeometry(WIDTH + wallThickness * 2, WALL_HEIGHT, wallThickness),
-    wallMaterial
-  );
-  northWall.position.set(0, WALL_HEIGHT / 2, -DEPTH / 2 - wallThickness / 2);
-  scene.add(northWall);
-  
-  // South wall
-  const southWall = northWall.clone();
-  southWall.position.z = DEPTH / 2 + wallThickness / 2;
-  scene.add(southWall);
-  
-  // East wall
-  const eastWall = new THREE.Mesh(
-    new THREE.BoxGeometry(wallThickness, WALL_HEIGHT, DEPTH),
-    wallMaterial
-  );
-  eastWall.position.set(WIDTH / 2 + wallThickness / 2, WALL_HEIGHT / 2, 0);
-  scene.add(eastWall);
-  
-  // West wall
-  const westWall = eastWall.clone();
-  westWall.position.x = -WIDTH / 2 - wallThickness / 2;
-  scene.add(westWall);
-
-  [
-    [-WIDTH / 2 + 4, 3, -DEPTH / 2 + 4],
-    [WIDTH / 2 - 4, 3, -DEPTH / 2 + 4],
-    [-WIDTH / 2 + 4, 3, DEPTH / 2 - 4],
-    [WIDTH / 2 - 4, 3, DEPTH / 2 - 4]
-  ].forEach(([x, y, z], index) => {
-    const light = new THREE.PointLight(index % 2 === 0 ? 0xffb23f : 0x26d8d8, 0.5, 16, 1.7);
-    light.position.set(x, y, z);
-    scene.add(light);
-  });
-  
-  // Obstacles
-  const obstacleMaterial = new THREE.MeshStandardMaterial({
-    color: 0x3a3325,
-    roughness: 0.5,
-    metalness: 0.46,
-    emissive: 0x1b1006,
-    emissiveIntensity: 0.08
-  });
-  
-  // Center pillar
-  const centerPillar = new THREE.Mesh(
-    new THREE.BoxGeometry(4, 6, 4),
-    obstacleMaterial
-  );
-  centerPillar.position.set(0, 3, 0);
-  scene.add(centerPillar);
-  
-  // Corner crates
-  const cratePositions = [
-    { x: -15, z: -15 }, { x: 15, z: -15 },
-    { x: -15, z: 15 }, { x: 15, z: 15 }
-  ];
-  
-  cratePositions.forEach(pos => {
-    const crate = new THREE.Mesh(
-      new THREE.BoxGeometry(3, 3, 3),
-      obstacleMaterial
-    );
-    crate.position.set(pos.x, 1.5, pos.z);
-    scene.add(crate);
-  });
-  
-  // Barriers
-  const barrierPositions = [
-    { x: -10, z: 0, rotY: 0 },
-    { x: 10, z: 0, rotY: 0 },
-    { x: 0, z: -10, rotY: Math.PI / 2 },
-    { x: 0, z: 10, rotY: Math.PI / 2 }
-  ];
-  
-  barrierPositions.forEach(pos => {
-    const barrier = new THREE.Mesh(
-      new THREE.BoxGeometry(6, 2, 1),
-      obstacleMaterial
-    );
-    barrier.position.set(pos.x, 1, pos.z);
-    barrier.rotation.y = pos.rotY;
-    scene.add(barrier);
-  });
+  Object.assign(ARENA, mapRuntime.arena);
 }
 
 function onWindowResize() {
@@ -1146,7 +1075,7 @@ function animate() {
   // Client-side prediction: move camera based on input for responsive feel
   // Server position updates will be smoothly interpolated in handleFullState
   if (isAlive && (Math.abs(moveX) > 0.001 || Math.abs(moveY) > 0.001)) {
-    const nextPosition = applyArenaMovement({
+    const nextPosition = applyMapMovement({
       x: camera.position.x,
       z: camera.position.z,
       rotationY: camera.rotation.y,
@@ -1154,6 +1083,7 @@ function animate() {
       moveY,
       speed: moveSpeed,
       deltaTime: delta,
+      map: activeMap,
       arena: ARENA
     });
 

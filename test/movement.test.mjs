@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  applyMapMovement,
   applyArenaMovement,
   calculateMovementDelta,
   clampArenaPosition,
@@ -71,4 +72,63 @@ test('applyArenaMovement keeps movement inside arena bounds', () => {
   });
 
   assert.deepEqual(position, { x: 24, z: 0 });
+});
+
+test('applyMapMovement keeps players outside collidable map boxes', () => {
+  const position = applyMapMovement({
+    x: -5,
+    z: 0,
+    rotationY: 0,
+    moveX: 1,
+    moveY: 0,
+    speed: 8,
+    deltaTime: 0.35,
+    playerRadius: 0.5,
+    map: {
+      arena: { width: 20, depth: 20 },
+      obstacles: [
+        {
+          type: 'box',
+          x: 0,
+          z: 0,
+          width: 4,
+          depth: 4,
+          height: 3,
+          collides: true
+        }
+      ]
+    }
+  });
+
+  assert.ok(position.x <= -2.5 + 0.000001);
+  assert.equal(position.z, 0);
+});
+
+test('applyMapMovement ignores non-collidable boxes', () => {
+  const position = applyMapMovement({
+    x: -5,
+    z: 0,
+    rotationY: 0,
+    moveX: 1,
+    moveY: 0,
+    speed: 8,
+    deltaTime: 0.35,
+    playerRadius: 0.5,
+    map: {
+      arena: { width: 20, depth: 20 },
+      obstacles: [
+        {
+          type: 'box',
+          x: 0,
+          z: 0,
+          width: 4,
+          depth: 4,
+          height: 3,
+          collides: false
+        }
+      ]
+    }
+  });
+
+  assert.deepEqual(position, { x: -2.2, z: 0 });
 });

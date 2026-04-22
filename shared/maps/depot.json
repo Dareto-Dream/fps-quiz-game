@@ -1,0 +1,166 @@
+{
+  "id": "depot",
+  "name": "Depot Crossfire",
+  "description": "A wider two-lane depot map with offset cover, long sightlines, and a busier center.",
+  "arena": {
+    "width": 60,
+    "depth": 44,
+    "wallHeight": 10
+  },
+  "style": {
+    "floorColor": "#101616",
+    "wallColor": "#1e2527",
+    "obstacleColor": "#354038",
+    "accentColor": "#41d6b5",
+    "gridColor": "#ffbe55",
+    "gridSecondaryColor": "#263132"
+  },
+  "spawns": [
+    { "x": -26, "z": -18, "yaw": 0.6 },
+    { "x": -18, "z": -18, "yaw": 0.35 },
+    { "x": -26, "z": 18, "yaw": 2.55 },
+    { "x": -18, "z": 18, "yaw": 2.8 },
+    { "x": 26, "z": -18, "yaw": -0.6 },
+    { "x": 18, "z": -18, "yaw": -0.35 },
+    { "x": 26, "z": 18, "yaw": -2.55 },
+    { "x": 18, "z": 18, "yaw": -2.8 },
+    { "x": -28, "z": 0, "yaw": 1.57 },
+    { "x": 28, "z": 0, "yaw": -1.57 },
+    { "x": -10, "z": -19, "yaw": 0.15 },
+    { "x": 10, "z": -19, "yaw": -0.15 },
+    { "x": -10, "z": 19, "yaw": 2.98 },
+    { "x": 10, "z": 19, "yaw": -2.98 },
+    { "x": -5, "z": -13, "yaw": 0.4 },
+    { "x": 5, "z": 13, "yaw": -2.72 }
+  ],
+  "obstacles": [
+    {
+      "id": "north-long-crate",
+      "type": "box",
+      "x": -9,
+      "z": -8,
+      "width": 14,
+      "depth": 2.2,
+      "height": 3,
+      "yaw": 0.08,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "south-long-crate",
+      "type": "box",
+      "x": 9,
+      "z": 8,
+      "width": 14,
+      "depth": 2.2,
+      "height": 3,
+      "yaw": 0.08,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "center-stack",
+      "type": "box",
+      "x": 0,
+      "z": 0,
+      "width": 5,
+      "depth": 5,
+      "height": 5,
+      "yaw": 0.7854,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "west-container",
+      "type": "box",
+      "x": -21,
+      "z": 4,
+      "width": 4,
+      "depth": 12,
+      "height": 4,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "east-container",
+      "type": "box",
+      "x": 21,
+      "z": -4,
+      "width": 4,
+      "depth": 12,
+      "height": 4,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "north-low-cover-left",
+      "type": "box",
+      "x": -20,
+      "z": -12,
+      "width": 7,
+      "depth": 1.4,
+      "height": 1.8,
+      "yaw": -0.35,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "north-low-cover-right",
+      "type": "box",
+      "x": 14,
+      "z": -13,
+      "width": 7,
+      "depth": 1.4,
+      "height": 1.8,
+      "yaw": 0.32,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "south-low-cover-left",
+      "type": "box",
+      "x": -14,
+      "z": 13,
+      "width": 7,
+      "depth": 1.4,
+      "height": 1.8,
+      "yaw": 0.32,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "south-low-cover-right",
+      "type": "box",
+      "x": 20,
+      "z": 12,
+      "width": 7,
+      "depth": 1.4,
+      "height": 1.8,
+      "yaw": -0.35,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "mid-north-box",
+      "type": "box",
+      "x": 0,
+      "z": -16,
+      "width": 4,
+      "depth": 3,
+      "height": 2.5,
+      "collides": true,
+      "blocksShots": true
+    },
+    {
+      "id": "mid-south-box",
+      "type": "box",
+      "x": 0,
+      "z": 16,
+      "width": 4,
+      "depth": 3,
+      "height": 2.5,
+      "collides": true,
+      "blocksShots": true
+    }
+  ]
+}

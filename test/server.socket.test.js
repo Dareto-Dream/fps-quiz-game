@@ -204,15 +204,18 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
     state.settings &&
     state.settings.maxPlayers === 1 &&
     state.settings.minPlayers === 1 &&
-    state.settings.matchDuration === 60
+    state.settings.matchDuration === 60 &&
+    state.settings.mapId === 'depot'
   );
   host.emit('update-room-settings', {
-    settings: { maxPlayers: 1, minPlayers: 1, matchDuration: 60 }
+    settings: { maxPlayers: 1, minPlayers: 1, matchDuration: 60, mapId: 'depot' }
   });
   const lobbyState = await settingsPromise;
   assert.equal(lobbyState.settings.maxPlayers, 1);
   assert.equal(lobbyState.settings.minPlayers, 1);
   assert.equal(lobbyState.settings.matchDuration, 60);
+  assert.equal(lobbyState.settings.mapId, 'depot');
+  assert.equal(lobbyState.map.id, 'depot');
 
   const hostStartedPromise = waitForEvent(host, 'game-started');
   const controllerStartedPromise = waitForEvent(controller, 'game-started');
@@ -220,6 +223,8 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   const [hostStarted, controllerStarted] = await Promise.all([hostStartedPromise, controllerStartedPromise]);
   assert.equal(hostStarted.matchDuration, 60);
   assert.equal(controllerStarted.matchDuration, 60);
+  assert.equal(hostStarted.settings.mapId, 'depot');
+  assert.equal(controllerStarted.map.id, 'depot');
 
   await expectNoEvent(host, 'match-timer', () => {
     controller.emit('match-timer', { timeRemaining: 1 });

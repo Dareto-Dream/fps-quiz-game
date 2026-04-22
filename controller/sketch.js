@@ -14,6 +14,7 @@ let playerColorName = '';
 let roomCode = '';
 let lobbyState = null;
 let inputInterval = null;
+let lobbyCountdownInterval = null;
 let animationStarted = false;
 let matchStarted = false;
 const PUBLIC_SERVER_URL = 'https://fps-quiz-game-production.up.railway.app';
@@ -578,16 +579,47 @@ function updateLobbyWait(data) {
   document.getElementById('wait-player-count').textContent = `${playerCount}/${maxPlayers}`;
   document.getElementById('wait-match-length').textContent = `${matchMinutes} min`;
 
-  if (playerCount < minPlayers) {
+  if (data.state === 'countdown') {
+    const seconds = getLobbyCountdownSeconds(data);
+    document.getElementById('wait-status').textContent = `Dropping in ${seconds}...`;
+    startLobbyCountdownTicker();
+  } else if (playerCount < minPlayers) {
+    stopLobbyCountdownTicker();
     const needed = minPlayers - playerCount;
     document.getElementById('wait-status').textContent =
       `Waiting for ${needed} more player${needed === 1 ? '' : 's'}...`;
   } else {
+    stopLobbyCountdownTicker();
     document.getElementById('wait-status').textContent = 'Waiting for host...';
   }
 }
 
+function getLobbyCountdownSeconds(data) {
+  const endsAt = Number(data && data.countdownEndsAt);
+  if (!Number.isFinite(endsAt)) return 5;
+  return Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+}
+
+function startLobbyCountdownTicker() {
+  if (lobbyCountdownInterval) return;
+  lobbyCountdownInterval = setInterval(() => {
+    if (!lobbyState || lobbyState.state !== 'countdown') {
+      stopLobbyCountdownTicker();
+      return;
+    }
+    document.getElementById('wait-status').textContent =
+      `Dropping in ${getLobbyCountdownSeconds(lobbyState)}...`;
+  }, 200);
+}
+
+function stopLobbyCountdownTicker() {
+  if (!lobbyCountdownInterval) return;
+  clearInterval(lobbyCountdownInterval);
+  lobbyCountdownInterval = null;
+}
+
 function handleGameStarted(data) {
+  stopLobbyCountdownTicker();
   const duration = data.matchDuration || (data.settings && data.settings.matchDuration) || matchTime;
   const elapsedSinceStart = data.startedAt ? Math.max(0, (Date.now() - data.startedAt) / 1000) : 0;
   const nextMap = getMapFromPayload(data);

@@ -217,9 +217,14 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   assert.equal(lobbyState.settings.mapId, 'depot');
   assert.equal(lobbyState.map.id, 'depot');
 
-  const hostStartedPromise = waitForEvent(host, 'game-started');
-  const controllerStartedPromise = waitForEvent(controller, 'game-started');
+  const countdownPromise = waitForEventWhere(host, 'lobby-state', state =>
+    state.state === 'countdown' && Number.isFinite(Number(state.countdownEndsAt))
+  );
+  const hostStartedPromise = waitForEvent(host, 'game-started', 8000);
+  const controllerStartedPromise = waitForEvent(controller, 'game-started', 8000);
   host.emit('start-game');
+  const countdownState = await countdownPromise;
+  assert.equal(countdownState.state, 'countdown');
   const [hostStarted, controllerStarted] = await Promise.all([hostStartedPromise, controllerStartedPromise]);
   assert.equal(hostStarted.matchDuration, 60);
   assert.equal(controllerStarted.matchDuration, 60);

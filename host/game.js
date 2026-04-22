@@ -60,6 +60,7 @@ let matchTimer = CONFIG.MATCH_DURATION;
 let matchActive = false;
 let roomCode = '';
 let joinUrl = PUBLIC_CONTROLLER_URL;
+let lobbyCountdownInterval = null;
 let lobbyState = null;
 let lobbySettings = {
   maxPlayers: CONFIG.MAX_PLAYERS,
@@ -330,7 +331,7 @@ function initLobbyControls() {
   startButton.addEventListener('click', () => {
     if (!socket || !roomCode) return;
     startButton.disabled = true;
-    document.getElementById('start-game-message').textContent = 'Starting match...';
+    document.getElementById('start-game-message').textContent = 'Starting countdown...';
     socket.emit('start-game');
   });
 
@@ -1034,6 +1035,7 @@ function handleLobbyState(data) {
 }
 
 function handleGameStarted(data) {
+  stopLobbyCountdownTicker();
   lobbySettings = data.settings || lobbySettings;
   applyMapFromRoomData(data, { repositionPlayers: false });
   const matchDuration = data.matchDuration || lobbySettings.matchDuration || CONFIG.MATCH_DURATION;
@@ -1191,11 +1193,23 @@ function updateLobbyStartState() {
   }
 
   if (matchActive) {
+    stopLobbyCountdownTicker();
     startButton.disabled = true;
     message.textContent = 'Match running';
     status.textContent = 'Match running';
     return;
   }
+
+  if (lobbyState && lobbyState.state === 'countdown') {
+    const seconds = getLobbyCountdownSeconds(lobbyState);
+    startButton.disabled = true;
+    message.textContent = `Dropping in ${seconds}...`;
+    status.textContent = `Starting in ${seconds}`;
+    startLobbyCountdownTicker();
+    return;
+  }
+
+  stopLobbyCountdownTicker();
 
   status.textContent = `${playerCount}/${maxPlayers} queued`;
 
@@ -1208,6 +1222,30 @@ function updateLobbyStartState() {
 
   startButton.disabled = false;
   message.textContent = `${playerCount}/${maxPlayers} players ready`;
+}
+
+function getLobbyCountdownSeconds(data) {
+  const endsAt = Number(data && data.countdownEndsAt);
+  if (!Number.isFinite(endsAt)) return 5;
+  return Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+}
+
+function startLobbyCountdownTicker() {
+  if (lobbyCountdownInterval) return;
+  lobbyCountdownInterval = setInterval(() => {
+    if (!lobbyState || lobbyState.state !== 'countdown') {
+      stopLobbyCountdownTicker();
+      updateLobbyStartState();
+      return;
+    }
+    updateLobbyStartState();
+  }, 200);
+}
+
+function stopLobbyCountdownTicker() {
+  if (!lobbyCountdownInterval) return;
+  clearInterval(lobbyCountdownInterval);
+  lobbyCountdownInterval = null;
 }
 
 function updateLeaderboard() {

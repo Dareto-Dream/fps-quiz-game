@@ -34,6 +34,7 @@ const MIN_MATCH_DURATION = 60;
 const MAX_MATCH_DURATION = 900;
 const SERVER_PORT = parsePort(process.env.PORT, config.SERVER_PORT);
 const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
+const MATCH_START_COUNTDOWN_MS = 5000;
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
@@ -258,6 +259,7 @@ function getLobbyState(roomCode) {
     state: room.state,
     createdAt: room.createdAt,
     startedAt: room.startedAt || null,
+    countdownEndsAt: room.countdownEndsAt || null,
     playerCount: room.playerIds.length,
     maxAllowedPlayers: MAX_ROOM_PLAYERS,
     settings: room.settings,
@@ -277,6 +279,50 @@ function emitLobbyState(roomCode) {
   if (state) {
     io.to(roomCode).emit('lobby-state', state);
   }
+}
+
+function beginRoomCountdown(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || room.state !== 'lobby') return;
+
+  room.state = 'countdown';
+  room.countdownEndsAt = Date.now() + MATCH_START_COUNTDOWN_MS;
+  clearTimeout(room.startTimeout);
+  room.startTimeout = setTimeout(() => {
+    startRoomMatch(roomCode);
+  }, MATCH_START_COUNTDOWN_MS);
+  emitLobbyState(roomCode);
+}
+
+function cancelRoomCountdown(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || room.state !== 'countdown') return;
+
+  clearTimeout(room.startTimeout);
+  room.startTimeout = null;
+  room.countdownEndsAt = null;
+  room.state = 'lobby';
+  emitLobbyState(roomCode);
+}
+
+function startRoomMatch(roomCode) {
+  const room = rooms[roomCode];
+  if (!room || room.state !== 'countdown') return;
+
+  clearTimeout(room.startTimeout);
+  room.startTimeout = null;
+  room.countdownEndsAt = null;
+  room.state = 'playing';
+  room.startedAt = Date.now();
+
+  io.to(roomCode).emit('game-started', {
+    roomCode,
+    settings: room.settings,
+    map: getMapById(room.settings.mapId),
+    matchDuration: room.settings.matchDuration,
+    startedAt: room.startedAt
+  });
+  emitLobbyState(roomCode);
 }
 
 // Get local IP address
@@ -405,7 +451,9 @@ io.on('connection', (socket) => {
     }
     
     if (room.state !== 'lobby') {
-      socket.emit('join-error', { message: 'Game already started' });
+      socket.emit('join-error', {
+        message: room.state === 'countdown' ? 'Game is starting' : 'Game already started'
+      });
       return;
     }
     
@@ -479,7 +527,9 @@ io.on('connection', (socket) => {
     if (room.hostId !== socket.id) return;
     
     if (room.state !== 'lobby') {
-      socket.emit('start-error', { message: 'Game already started' });
+      socket.emit('start-error', {
+        message: room.state === 'countdown' ? 'Match starting...' : 'Game already started'
+      });
       return;
     }
     
@@ -490,17 +540,7 @@ io.on('connection', (socket) => {
       return;
     }
     
-    room.state = 'playing';
-    room.startedAt = Date.now();
-    
-    io.to(socket.roomCode).emit('game-started', {
-      roomCode: socket.roomCode,
-      settings: room.settings,
-      map: getMapById(room.settings.mapId),
-      matchDuration: room.settings.matchDuration,
-      startedAt: room.startedAt
-    });
-    emitLobbyState(socket.roomCode);
+    beginRoomCountdown(socket.roomCode);
   });
   
   // Controller sends input
@@ -679,6 +719,7 @@ io.on('connection', (socket) => {
       
       if (socket.deviceType === 'host') {
         // Host disconnected - notify all players and clean up room
+        clearTimeout(room.startTimeout);
         io.to(socket.roomCode).emit('host-disconnected');
         delete rooms[socket.roomCode];
         delete roomColors[socket.roomCode];
@@ -706,6 +747,10 @@ io.on('connection', (socket) => {
           });
         }
         
+        if (room.state === 'countdown' && room.playerIds.length < room.settings.minPlayers) {
+          cancelRoomCountdown(socket.roomCode);
+        }
+
         console.log(`Player ${socket.id} left room ${socket.roomCode}`);
         emitLobbyState(socket.roomCode);
       }

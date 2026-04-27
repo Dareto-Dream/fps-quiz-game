@@ -513,8 +513,8 @@ function initSocket() {
   });
   
   socket.on('player-connected', (data) => {
-    console.log(`Player connected: ${data.playerId} (${data.colorName})`);
-    createPlayer(data.playerId, data.color, data.colorName);
+    console.log(`Player connected: ${data.playerId} (${data.playerName || data.colorName})`);
+    createPlayer(data.playerId, data.color, data.colorName, data.playerName);
     updatePlayerCount();
     playSound('spawn');
   });
@@ -561,8 +561,9 @@ function createArena() {
 // ============================================
 // PLAYER MANAGEMENT
 // ============================================
-function createPlayer(playerId, color, colorName) {
+function createPlayer(playerId, color, colorName, playerName) {
   const spawnPoint = getRandomSpawnPoint();
+  const displayName = playerName || `${colorName} Player`;
   
   // Create player group
   const playerGroup = new THREE.Group();
@@ -600,7 +601,7 @@ function createPlayer(playerId, color, colorName) {
   // Name label
   const labelDiv = document.createElement('div');
   labelDiv.className = 'player-label';
-  labelDiv.textContent = colorName;
+  labelDiv.textContent = displayName;
   labelDiv.style.color = color;
   const label = new CSS2DObject(labelDiv);
   label.position.set(0, 2.5, 0);
@@ -621,6 +622,7 @@ function createPlayer(playerId, color, colorName) {
   players[playerId] = {
     id: playerId,
     colorName: colorName,
+    playerName: displayName,
     color: color,
     rotation: new THREE.Euler(0, spawnPoint.yaw || 0, 0, 'YXZ'),
     velocity: new THREE.Vector3(),
@@ -1016,7 +1018,7 @@ function handleKill(killer, victim) {
   playSound('kill');
   
   // Add kill to feed
-  addKillFeed(killer.colorName, victim.colorName, killer.color, victim.color);
+  addKillFeed(getPlayerDisplayName(killer), getPlayerDisplayName(victim), killer.color, victim.color);
   
   socket.emit('kill-event', {
     killerId: killer.id,
@@ -1028,7 +1030,7 @@ function handleKill(killer, victim) {
   socket.emit('player-death', {
     victimId: victim.id,
     killerId: killer.id,
-    killerName: killer.colorName,
+    killerName: getPlayerDisplayName(killer),
     respawnTime: CONFIG.RESPAWN_TIME
   });
   
@@ -1077,7 +1079,7 @@ function updateCamera(deltaTime) {
     
     // Update camera mode display
     document.getElementById('camera-mode').classList.add('following');
-    document.getElementById('camera-mode-text').textContent = `FOLLOWING: ${player.colorName}`;
+    document.getElementById('camera-mode-text').textContent = `FOLLOWING: ${getPlayerDisplayName(player)}`;
     
   } else {
     currentCameraState = CameraState.OVERVIEW;
@@ -1298,7 +1300,7 @@ function renderLobbyPlayers(queuedPlayers) {
 
     const name = document.createElement('div');
     name.className = 'lobby-player-name';
-    name.textContent = `${player.colorName} Player`;
+    name.textContent = player.playerName || `${player.colorName} Player`;
 
     const slot = document.createElement('div');
     slot.className = 'lobby-player-slot';
@@ -1394,7 +1396,7 @@ function updateLeaderboard() {
   const html = sorted.map((p, i) => `
     <div class="leaderboard-entry ${p.streak >= CONFIG.STREAK_THRESHOLD ? 'streak' : ''}">
       <span class="rank">${i + 1}.</span>
-      <span class="player-name" style="color: ${p.color}">${p.colorName}</span>
+      <span class="player-name" style="color: ${p.color}">${escapeHtml(getPlayerDisplayName(p))}</span>
       <span class="stats">${p.kills}-${p.deaths}</span>
       ${p.streak >= CONFIG.STREAK_THRESHOLD ? `<span class="streak-indicator">STK ${p.streak}</span>` : ''}
       ${p.id === streakLeader ? '<span class="crown">LEAD</span>' : ''}
@@ -1407,6 +1409,19 @@ function updateLeaderboard() {
 function updatePlayerCount() {
   document.getElementById('current-players').textContent = Object.keys(players).length;
   document.getElementById('max-players').textContent = lobbySettings.maxPlayers || CONFIG.MAX_PLAYERS;
+}
+
+function getPlayerDisplayName(player) {
+  return (player && (player.playerName || player.colorName)) || 'Player';
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function updateTimerDisplay() {
@@ -1429,11 +1444,22 @@ function addKillFeed(killerName, victimName, killerColor, victimColor) {
   const feed = document.getElementById('kill-feed');
   const entry = document.createElement('div');
   entry.className = 'kill-entry';
-  entry.innerHTML = `
-    <span class="killer" style="color: ${killerColor}">${killerName}</span>
-    <span class="icon">ELIM</span>
-    <span class="victim" style="color: ${victimColor}">${victimName}</span>
-  `;
+
+  const killer = document.createElement('span');
+  killer.className = 'killer';
+  killer.style.color = killerColor;
+  killer.textContent = killerName;
+
+  const icon = document.createElement('span');
+  icon.className = 'icon';
+  icon.textContent = 'ELIM';
+
+  const victim = document.createElement('span');
+  victim.className = 'victim';
+  victim.style.color = victimColor;
+  victim.textContent = victimName;
+
+  entry.append(killer, icon, victim);
   feed.insertBefore(entry, feed.firstChild);
   
   // Remove after animation
@@ -1494,6 +1520,7 @@ function broadcastGameState() {
       rotX: p.rotation.x,
       color: p.color,
       colorName: p.colorName,
+      playerName: p.playerName,
       alive: p.alive
     };
   });
@@ -1520,7 +1547,7 @@ function endMatch() {
   if (winner) {
     document.getElementById('winner-display').innerHTML = `
       WINNER<br>
-      <span class="winner-name" style="color: ${winner.color}">${winner.colorName}</span><br>
+      <span class="winner-name" style="color: ${winner.color}">${escapeHtml(getPlayerDisplayName(winner))}</span><br>
       ${winner.kills} Kills
     `;
   } else {
@@ -1529,17 +1556,23 @@ function endMatch() {
   
   const scoresHtml = sorted.map((p, i) => `
     <div class="final-score-entry" style="color: ${p.color}">
-      ${i + 1}. ${p.colorName}: ${p.kills} kills, ${p.deaths} deaths
+      ${i + 1}. ${escapeHtml(getPlayerDisplayName(p))}: ${p.kills} kills, ${p.deaths} deaths
     </div>
   `).join('');
   document.getElementById('final-scores').innerHTML = scoresHtml;
   
   // Broadcast match end
   socket.emit('match-end', {
-    winner: winner ? { id: winner.id, colorName: winner.colorName, kills: winner.kills } : null,
+    winner: winner ? {
+      id: winner.id,
+      colorName: winner.colorName,
+      playerName: winner.playerName,
+      kills: winner.kills
+    } : null,
     finalScores: sorted.map(p => ({
       id: p.id,
       colorName: p.colorName,
+      playerName: p.playerName,
       kills: p.kills,
       deaths: p.deaths
     }))

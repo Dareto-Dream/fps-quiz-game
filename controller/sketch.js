@@ -9,8 +9,8 @@ import { createShotEffects, deserializeVector3 } from '../shared/shot-visuals.mj
 let socket;
 let connected = false;
 let playerId = '';
+let playerName = '';
 let playerColor = '#ffffff';
-let playerColorName = '';
 let roomCode = '';
 let lobbyState = null;
 let inputInterval = null;
@@ -101,6 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
   loadClientConfig();
 
   document.getElementById('server-url').value = PUBLIC_SERVER_URL;
+  document.getElementById('player-name-input').value = getSavedPlayerName();
   
   // Event listeners
   document.getElementById('connect-btn').addEventListener('click', connectToServer);
@@ -440,9 +441,10 @@ function updateKeyboardInput() {
 // ============================================
 function connectToServer() {
   let serverUrl = document.getElementById('server-url').value.trim();
+  const requestedPlayerName = sanitizeLocalPlayerName(document.getElementById('player-name-input').value);
   const code = document.getElementById('room-code').value.trim();
   
-  if (!serverUrl || !code) {
+  if (!serverUrl || !requestedPlayerName || !code) {
     showConnectionError('Please fill in all fields');
     return;
   }
@@ -483,16 +485,17 @@ function connectToServer() {
   }, 15000);
   
   socket.on('connect', () => {
-    socket.emit('join-room', { roomCode: code });
+    socket.emit('join-room', { roomCode: code, playerName: requestedPlayerName });
   });
   
   socket.on('room-joined', (data) => {
     clearTimeout(connectionTimeout);
     connected = true;
     playerId = data.playerId;
+    playerName = data.playerName || requestedPlayerName;
     playerColor = data.color;
-    playerColorName = data.colorName;
     roomCode = data.roomCode;
+    savePlayerName(playerName);
     const roomMap = getMapFromPayload(data);
     if (roomMap) {
       applyActiveMap(roomMap, { rebuild: Boolean(scene) });
@@ -505,9 +508,9 @@ function connectToServer() {
     document.getElementById('game-screen').style.display = 'none';
 
     // Update player indicator
-    document.getElementById('player-name').textContent = playerColorName;
+    document.getElementById('player-name').textContent = playerName;
     document.getElementById('player-color').style.backgroundColor = playerColor;
-    document.getElementById('wait-player-name').textContent = `${playerColorName} Player`;
+    document.getElementById('wait-player-name').textContent = playerName;
     document.getElementById('wait-player-color').style.backgroundColor = playerColor;
     document.getElementById('wait-room-code').textContent = roomCode;
     updateLobbyWait({
@@ -554,6 +557,31 @@ function connectToServer() {
 
 function showConnectionError(message) {
   document.getElementById('connection-error').textContent = message;
+}
+
+function sanitizeLocalPlayerName(value) {
+  const normalized = String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return Array.from(normalized).slice(0, 18).join('').trim();
+}
+
+function getSavedPlayerName() {
+  try {
+    return sanitizeLocalPlayerName(localStorage.getItem('arena-fps-player-name') || '');
+  } catch (error) {
+    return '';
+  }
+}
+
+function savePlayerName(name) {
+  try {
+    localStorage.setItem('arena-fps-player-name', sanitizeLocalPlayerName(name));
+  } catch (error) {
+    // Storage can be blocked in private browsing contexts.
+  }
 }
 
 function handleLobbyState(data) {
@@ -1010,8 +1038,7 @@ function handleMatchEnd(data) {
   document.getElementById('match-end').style.display = 'flex';
   
   if (data.winner) {
-    document.getElementById('winner-info').innerHTML =
-      `Winner: <strong>${data.winner.colorName}</strong> with ${data.winner.kills} kills`;
+    renderWinnerInfo(data.winner);
   }
   
   document.getElementById('your-final-stats').textContent = 
@@ -1128,6 +1155,16 @@ function renderQuiz() {
     
     container.appendChild(questionDiv);
   });
+}
+
+function renderWinnerInfo(winner) {
+  const winnerInfo = document.getElementById('winner-info');
+  winnerInfo.replaceChildren();
+  winnerInfo.append('Winner: ');
+
+  const name = document.createElement('strong');
+  name.textContent = winner.playerName || winner.colorName || 'Player';
+  winnerInfo.append(name, ` with ${winner.kills} kills`);
 }
 
 function resetQuizScroll() {

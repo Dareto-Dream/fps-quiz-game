@@ -212,6 +212,7 @@ test('host and controller pages load, connect, and start a match without browser
   const roomCode = await hostPage.locator('#lobby-room-code').textContent();
   await controllerPage.goto(`http://127.0.0.1:${server.port}/controller`, { waitUntil: 'domcontentloaded' });
   await controllerPage.fill('#server-url', `http://127.0.0.1:${server.port}`);
+  await controllerPage.fill('#player-name-input', 'Smoke Test');
   await controllerPage.fill('#room-code', roomCode.trim());
   await controllerPage.click('#connect-btn');
   await controllerPage.waitForFunction(() => getComputedStyle(document.getElementById('lobby-wait-screen')).display !== 'none');

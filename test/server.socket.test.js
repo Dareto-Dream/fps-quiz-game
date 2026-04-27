@@ -195,10 +195,12 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
 
   const joinedPromise = waitForEvent(controller, 'room-joined');
   const playerConnectedPromise = waitForEvent(host, 'player-connected');
-  controller.emit('join-room', { roomCode: roomCreated.roomCode });
+  controller.emit('join-room', { roomCode: roomCreated.roomCode, playerName: '  Ace <Pilot>\n' });
   const [joined, playerConnected] = await Promise.all([joinedPromise, playerConnectedPromise]);
   assert.equal(joined.playerId, controller.id);
+  assert.equal(joined.playerName, 'Ace Pilot');
   assert.equal(playerConnected.playerId, controller.id);
+  assert.equal(playerConnected.playerName, 'Ace Pilot');
 
   const settingsPromise = waitForEventWhere(host, 'lobby-state', state =>
     state.settings &&
@@ -216,6 +218,7 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   assert.equal(lobbyState.settings.matchDuration, 60);
   assert.equal(lobbyState.settings.mapId, 'depot');
   assert.equal(lobbyState.map.id, 'depot');
+  assert.equal(lobbyState.players[0].playerName, 'Ace Pilot');
 
   const countdownPromise = waitForEventWhere(host, 'lobby-state', state =>
     state.state === 'countdown' && Number.isFinite(Number(state.countdownEndsAt))

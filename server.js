@@ -35,6 +35,7 @@ const MAX_MATCH_DURATION = 900;
 const SERVER_PORT = parsePort(process.env.PORT, config.SERVER_PORT);
 const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
 const MATCH_START_COUNTDOWN_MS = 5000;
+const MAX_PLAYER_NAME_LENGTH = 18;
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
@@ -200,6 +201,16 @@ function sanitizePlayerInput(data = {}) {
   };
 }
 
+function sanitizePlayerName(value, fallback = 'Player') {
+  const normalized = String(value || '')
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/[<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const truncated = Array.from(normalized).slice(0, MAX_PLAYER_NAME_LENGTH).join('').trim();
+  return truncated || fallback;
+}
+
 function isHostForRoom(socket) {
   const room = socket.roomCode && rooms[socket.roomCode];
   return Boolean(room && socket.deviceType === 'host' && room.hostId === socket.id);
@@ -269,6 +280,7 @@ function getLobbyState(roomCode) {
       slot: index + 1,
       color: room.players[playerId].color,
       colorName: room.players[playerId].colorName,
+      playerName: room.players[playerId].playerName,
       joinedAt: room.players[playerId].joinedAt
     }))
   };
@@ -467,6 +479,8 @@ io.on('connection', (socket) => {
       socket.emit('join-error', { message: 'No colors available' });
       return;
     }
+
+    const playerName = sanitizePlayerName(data.playerName, `${colorInfo.colorName} Player`);
     
     socket.roomCode = roomCode;
     socket.deviceType = 'controller';
@@ -477,17 +491,19 @@ io.on('connection', (socket) => {
     room.players[socket.id] = {
       color: colorInfo.color,
       colorName: colorInfo.colorName,
+      playerName,
       colorIndex: colorInfo.colorIndex,
       joinedAt: Date.now()
     };
     
-    console.log(`Player ${socket.id} (${colorInfo.colorName}) joined room ${roomCode}`);
+    console.log(`Player ${socket.id} (${playerName}, ${colorInfo.colorName}) joined room ${roomCode}`);
     
     // Notify controller
     socket.emit('room-joined', {
       playerId: socket.id,
       color: colorInfo.color,
       colorName: colorInfo.colorName,
+      playerName,
       roomCode: roomCode,
       state: room.state,
       settings: room.settings,
@@ -501,6 +517,7 @@ io.on('connection', (socket) => {
         playerId: socket.id,
         color: colorInfo.color,
         colorName: colorInfo.colorName,
+        playerName,
         timestamp: Date.now()
       });
     }

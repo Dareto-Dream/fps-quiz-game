@@ -284,6 +284,16 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   const quizCompleted = await quizCompletedPromise;
   assert.equal(quizCompleted.playerId, controller.id);
   assert.equal(quizCompleted.correctCount, 3);
+  assert.equal(quizCompleted.accuracyReport.totalAttempts, 3);
+
+  const accuracyPromise = waitForEvent(host, 'accuracy-report');
+  host.emit('request-accuracy-report');
+  const accuracyReport = await accuracyPromise;
+  assert.equal(accuracyReport.totalAttempts, 3);
+  assert.equal(accuracyReport.questions.length, 3);
+  assert.equal(accuracyReport.questions[0].accuracy, 100);
+  assert.equal(accuracyReport.players[0].playerName, 'Ace Pilot');
+  assert.equal(accuracyReport.players[0].accuracy, 100);
 
   const deathPromise = waitForEvent(controller, 'player-died');
   host.emit('player-death', {

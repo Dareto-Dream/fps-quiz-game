@@ -76,6 +76,11 @@ let lobbySettings = {
   matchDuration: CONFIG.MATCH_DURATION,
   mapId: CONFIG.DEFAULT_MAP_ID
 };
+let accuracyReport = {
+  totalAttempts: 0,
+  questions: [],
+  players: []
+};
 let mapLibrary = [];
 let activeMap = null;
 let mapRuntime = null;
@@ -120,6 +125,7 @@ async function init() {
   initThreeJS();
   initAudio();
   initLobbyControls();
+  initResultControls();
   initSocket();
   createArena();
   console.log('Game initialized');
@@ -470,6 +476,13 @@ function initLobbyControls() {
   });
 }
 
+function initResultControls() {
+  document.getElementById('accuracy-btn').addEventListener('click', showAccuracyReport);
+  document.getElementById('accuracy-back-btn').addEventListener('click', hideAccuracyReport);
+  document.getElementById('accuracy-questions-tab').addEventListener('click', () => setAccuracyTab('questions'));
+  document.getElementById('accuracy-players-tab').addEventListener('click', () => setAccuracyTab('players'));
+}
+
 function initSocket() {
   socket = io({
     transports: ['websocket'],
@@ -531,6 +544,11 @@ function initSocket() {
   
   socket.on('quiz-completed', (data) => {
     handleQuizCompleted(data);
+  });
+
+  socket.on('accuracy-report', (data) => {
+    accuracyReport = normalizeAccuracyReport(data);
+    renderAccuracyReport();
   });
   
   socket.on('disconnect', () => {
@@ -1044,6 +1062,10 @@ function handleKill(killer, victim) {
 function handleQuizCompleted(data) {
   const player = players[data.playerId];
   if (!player) return;
+
+  if (data.accuracyReport) {
+    accuracyReport = normalizeAccuracyReport(data.accuracyReport);
+  }
   
   const reward = CONFIG.QUIZ_REWARDS[data.correctCount] || 0;
   player.ammo = Math.min(player.ammo + reward, CONFIG.PLAYER_MAX_AMMO);
@@ -1181,7 +1203,9 @@ function handleGameStarted(data) {
 
   document.body.classList.remove('lobby-active');
   document.getElementById('match-end-screen').style.display = 'none';
+  document.getElementById('accuracy-screen').style.display = 'none';
   document.getElementById('start-game-message').textContent = 'Match running';
+  accuracyReport = { totalAttempts: 0, questions: [], players: [] };
 
   updateTimerDisplay();
   updatePlayerCount();
@@ -1424,6 +1448,142 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function requestAccuracyReport() {
+  if (socket && roomCode) {
+    socket.emit('request-accuracy-report');
+  }
+}
+
+function showAccuracyReport() {
+  document.getElementById('accuracy-screen').style.display = 'flex';
+  setAccuracyTab('questions');
+  renderAccuracyReport();
+  requestAccuracyReport();
+}
+
+function hideAccuracyReport() {
+  document.getElementById('accuracy-screen').style.display = 'none';
+}
+
+function setAccuracyTab(tabName) {
+  const isPlayers = tabName === 'players';
+  document.getElementById('accuracy-questions-tab').classList.toggle('active', !isPlayers);
+  document.getElementById('accuracy-players-tab').classList.toggle('active', isPlayers);
+  document.getElementById('accuracy-questions-view').hidden = isPlayers;
+  document.getElementById('accuracy-players-view').hidden = !isPlayers;
+}
+
+function normalizeAccuracyReport(report = {}) {
+  return {
+    totalAttempts: Number(report.totalAttempts) || 0,
+    questions: Array.isArray(report.questions) ? report.questions : [],
+    players: Array.isArray(report.players) ? report.players : []
+  };
+}
+
+function renderAccuracyReport() {
+  const report = normalizeAccuracyReport(accuracyReport);
+  const questionCount = report.questions.length;
+  const playerCount = report.players.length;
+  document.getElementById('accuracy-summary').textContent =
+    `${report.totalAttempts} answer${report.totalAttempts === 1 ? '' : 's'} / ${questionCount} question${questionCount === 1 ? '' : 's'} / ${playerCount} player${playerCount === 1 ? '' : 's'}`;
+
+  renderQuestionAccuracy(report.questions);
+  renderPlayerAccuracy(report.players);
+}
+
+function renderQuestionAccuracy(questions) {
+  const list = document.getElementById('accuracy-question-list');
+  list.replaceChildren();
+
+  if (!questions.length) {
+    list.appendChild(createAccuracyEmpty('No quiz answers have been submitted yet.'));
+    return;
+  }
+
+  questions.forEach((question, index) => {
+    list.appendChild(createAccuracyRow({
+      rank: index + 1,
+      title: question.question || 'Unknown question',
+      subtitle: `Answer: ${question.correctOption || 'Unknown'}`,
+      accuracy: question.accuracy,
+      correct: question.correct,
+      attempts: question.attempts,
+      color: null
+    }));
+  });
+}
+
+function renderPlayerAccuracy(playerStats) {
+  const list = document.getElementById('accuracy-player-list');
+  list.replaceChildren();
+
+  if (!playerStats.length) {
+    list.appendChild(createAccuracyEmpty('No players have joined this lobby.'));
+    return;
+  }
+
+  playerStats.forEach((player, index) => {
+    list.appendChild(createAccuracyRow({
+      rank: index + 1,
+      title: player.playerName || player.colorName || 'Player',
+      subtitle: `${player.correct || 0}/${player.attempts || 0} quiz answers correct`,
+      accuracy: player.accuracy,
+      correct: player.correct,
+      attempts: player.attempts,
+      color: player.color
+    }));
+  });
+}
+
+function createAccuracyRow({ rank, title, subtitle, accuracy, correct, attempts, color }) {
+  const row = document.createElement('div');
+  row.className = 'accuracy-row';
+  if (color) {
+    row.style.borderLeftColor = color;
+  }
+
+  const rankEl = document.createElement('div');
+  rankEl.className = 'accuracy-rank';
+  rankEl.textContent = `#${String(rank).padStart(2, '0')}`;
+
+  const name = document.createElement('div');
+  name.className = 'accuracy-name';
+  const titleEl = document.createElement('strong');
+  titleEl.textContent = title;
+  if (color) {
+    titleEl.style.color = color;
+  }
+  const subtitleEl = document.createElement('span');
+  subtitleEl.textContent = subtitle;
+  name.append(titleEl, subtitleEl);
+
+  const meter = document.createElement('div');
+  meter.className = 'accuracy-meter';
+  const meterFill = document.createElement('div');
+  meterFill.className = 'accuracy-meter-fill';
+  meterFill.style.width = `${Math.max(0, Math.min(100, Number(accuracy) || 0))}%`;
+  meter.appendChild(meterFill);
+
+  const score = document.createElement('div');
+  score.className = 'accuracy-score';
+  score.textContent = accuracy === null || accuracy === undefined ? '--%' : `${accuracy}%`;
+
+  const attemptsEl = document.createElement('div');
+  attemptsEl.className = 'accuracy-attempts';
+  attemptsEl.textContent = `${correct || 0}/${attempts || 0}`;
+
+  row.append(rankEl, name, meter, score, attemptsEl);
+  return row;
+}
+
+function createAccuracyEmpty(message) {
+  const empty = document.createElement('div');
+  empty.className = 'accuracy-empty';
+  empty.textContent = message;
+  return empty;
+}
+
 function updateTimerDisplay() {
   const minutes = Math.floor(matchTimer / 60);
   const seconds = Math.floor(matchTimer % 60);
@@ -1577,6 +1737,7 @@ function endMatch() {
       deaths: p.deaths
     }))
   });
+  requestAccuracyReport();
   
   // Restart button
   document.getElementById('restart-btn').onclick = restartMatch;
@@ -1584,6 +1745,8 @@ function endMatch() {
 
 function restartMatch() {
   document.getElementById('match-end-screen').style.display = 'none';
+  document.getElementById('accuracy-screen').style.display = 'none';
+  accuracyReport = { totalAttempts: 0, questions: [], players: [] };
   
   // Reset all players
   Object.values(players).forEach(player => {

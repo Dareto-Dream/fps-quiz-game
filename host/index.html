@@ -115,8 +115,39 @@
       <h1>MATCH OVER</h1>
       <div id="winner-display"></div>
       <div id="final-scores"></div>
-      <button id="restart-btn">NEW MATCH</button>
+      <div class="match-end-actions">
+        <button id="accuracy-btn" type="button">ACCURACY</button>
+        <button id="restart-btn" type="button">NEW MATCH</button>
+      </div>
     </div>
+  </div>
+
+  <!-- Accuracy Report -->
+  <div id="accuracy-screen" style="display: none;">
+    <aside class="accuracy-tabs" aria-label="Accuracy report views">
+      <button id="accuracy-questions-tab" class="active" type="button">Questions</button>
+      <button id="accuracy-players-tab" type="button">Players</button>
+      <button id="accuracy-back-btn" type="button">Back</button>
+    </aside>
+    <main class="accuracy-page">
+      <header class="accuracy-header">
+        <div>
+          <div class="accuracy-kicker">Lobby Accuracy</div>
+          <h1>Accuracy Report</h1>
+        </div>
+        <div id="accuracy-summary">No quiz attempts yet</div>
+      </header>
+
+      <section id="accuracy-questions-view" class="accuracy-view">
+        <div class="accuracy-section-title">Least Known to Most Known</div>
+        <div id="accuracy-question-list" class="accuracy-list"></div>
+      </section>
+
+      <section id="accuracy-players-view" class="accuracy-view" hidden>
+        <div class="accuracy-section-title">Player Accuracy</div>
+        <div id="accuracy-player-list" class="accuracy-list"></div>
+      </section>
+    </main>
   </div>
   
   <!-- Camera Mode Indicator -->

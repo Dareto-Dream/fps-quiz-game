@@ -211,6 +211,119 @@ function sanitizePlayerName(value, fallback = 'Player') {
   return truncated || fallback;
 }
 
+function createAccuracyStats() {
+  return {
+    questions: {},
+    players: {}
+  };
+}
+
+function ensureAccuracyPlayer(room, playerId) {
+  const player = room && room.players && room.players[playerId];
+  if (!room || !player) return null;
+
+  if (!room.accuracyStats) {
+    room.accuracyStats = createAccuracyStats();
+  }
+
+  if (!room.accuracyStats.players[playerId]) {
+    room.accuracyStats.players[playerId] = {
+      playerId,
+      playerName: player.playerName || `${player.colorName} Player`,
+      colorName: player.colorName,
+      color: player.color,
+      attempts: 0,
+      correct: 0
+    };
+  } else {
+    Object.assign(room.accuracyStats.players[playerId], {
+      playerName: player.playerName || `${player.colorName} Player`,
+      colorName: player.colorName,
+      color: player.color
+    });
+  }
+
+  return room.accuracyStats.players[playerId];
+}
+
+function ensureAccuracyQuestion(room, question) {
+  if (!room || !question) return null;
+
+  if (!room.accuracyStats) {
+    room.accuracyStats = createAccuracyStats();
+  }
+
+  const questionId = String(question.id);
+  if (!room.accuracyStats.questions[questionId]) {
+    room.accuracyStats.questions[questionId] = {
+      questionId,
+      question: question.question,
+      correctOption: question.options[question.correct],
+      attempts: 0,
+      correct: 0
+    };
+  }
+
+  return room.accuracyStats.questions[questionId];
+}
+
+function recordQuizAccuracy(room, playerId, question, isCorrect) {
+  const questionStats = ensureAccuracyQuestion(room, question);
+  const playerStats = ensureAccuracyPlayer(room, playerId);
+  if (!questionStats || !playerStats) return;
+
+  questionStats.attempts++;
+  playerStats.attempts++;
+
+  if (isCorrect) {
+    questionStats.correct++;
+    playerStats.correct++;
+  }
+}
+
+function toAccuracyPercent(correct, attempts) {
+  return attempts > 0 ? Math.round((correct / attempts) * 100) : null;
+}
+
+function buildAccuracyReport(room) {
+  if (!room.accuracyStats) {
+    room.accuracyStats = createAccuracyStats();
+  }
+
+  room.playerIds.forEach(playerId => {
+    ensureAccuracyPlayer(room, playerId);
+  });
+
+  const questionStats = Object.values(room.accuracyStats.questions)
+    .map(stats => ({
+      ...stats,
+      accuracy: toAccuracyPercent(stats.correct, stats.attempts)
+    }))
+    .sort((a, b) => {
+      const aAccuracy = a.accuracy === null ? 101 : a.accuracy;
+      const bAccuracy = b.accuracy === null ? 101 : b.accuracy;
+      return aAccuracy - bAccuracy || b.attempts - a.attempts || a.question.localeCompare(b.question);
+    });
+
+  const playerStats = Object.values(room.accuracyStats.players)
+    .map(stats => ({
+      ...stats,
+      accuracy: toAccuracyPercent(stats.correct, stats.attempts)
+    }))
+    .sort((a, b) => {
+      const aAccuracy = a.accuracy === null ? -1 : a.accuracy;
+      const bAccuracy = b.accuracy === null ? -1 : b.accuracy;
+      return bAccuracy - aAccuracy || b.attempts - a.attempts || a.playerName.localeCompare(b.playerName);
+    });
+
+  return {
+    generatedAt: Date.now(),
+    totalAttempts: questionStats.reduce((total, stats) => total + stats.attempts, 0),
+    questions: questionStats,
+    players: playerStats
+  };
+}
+
 function isHostForRoom(socket) {
   const room = socket.roomCode && rooms[socket.roomCode];
   return Boolean(room && socket.deviceType === 'host' && room.hostId === socket.id);
@@ -326,6 +439,7 @@ function startRoomMatch(roomCode) {
   room.countdownEndsAt = null;
   room.state = 'playing';
   room.startedAt = Date.now();
+  room.accuracyStats = createAccuracyStats();
 
   io.to(roomCode).emit('game-started', {
     roomCode,
@@ -375,9 +489,11 @@ function generateRoomCode() {
 
 // Get random quiz questions
 function getRandomQuestions(count = 3) {
-  const shuffled = [...questions].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count).map((q, idx) => ({
-    id: idx,
+  const shuffled = questions
+    .map((question, index) => ({ ...question, id: index }))
+    .sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count).map(q => ({
+    id: q.id,
     question: q.question,
     options: q.options,
     correct: q.correct
@@ -428,6 +544,7 @@ io.on('connection', (socket) => {
       players: {},
       state: 'lobby',
       settings: createDefaultRoomSettings(),
+      accuracyStats: createAccuracyStats(),
       hostIP: hostIP,
       createdAt: Date.now()
     };
@@ -495,6 +612,7 @@ io.on('connection', (socket) => {
       colorIndex: colorInfo.colorIndex,
       joinedAt: Date.now()
     };
+    ensureAccuracyPlayer(room, socket.id);
     
     console.log(`Player ${socket.id} (${playerName}, ${colorInfo.colorName}) joined room ${roomCode}`);
     
@@ -584,10 +702,7 @@ io.on('connection', (socket) => {
     if (rooms[socket.roomCode].state !== 'playing') return;
 
     const quizQuestions = getRandomQuestions(3);
-    socket.activeQuiz = quizQuestions.map(q => ({
-      id: q.id,
-      correct: q.correct
-    }));
+    socket.activeQuiz = quizQuestions;
 
     socket.emit('quiz-questions', {
       questions: quizQuestions.map(q => ({
@@ -604,35 +719,55 @@ io.on('connection', (socket) => {
     if (!isControllerForRoom(socket)) return;
     if (rooms[socket.roomCode].state !== 'playing') return;
 
+    const room = rooms[socket.roomCode];
     const answers = Array.isArray(data.answers) ? data.answers : [];
-    const correctById = new Map((socket.activeQuiz || []).map(q => [q.id, q.correct]));
+    const activeQuiz = Array.isArray(socket.activeQuiz) ? socket.activeQuiz : [];
+    const answersById = new Map();
     const answeredIds = new Set();
     let correctCount = 0;
 
     answers.forEach(answer => {
-      if (!answer || !correctById.has(answer.questionId)) return;
-      if (answeredIds.has(answer.questionId)) return;
-      answeredIds.add(answer.questionId);
-      const selectedOption = Number.parseInt(answer.selectedOption, 10);
-      if (!Number.isInteger(selectedOption) || selectedOption < 0 || selectedOption > 3) return;
-      if (selectedOption === correctById.get(answer.questionId)) {
+      if (!answer) return;
+      const questionId = Number.parseInt(answer.questionId, 10);
+      if (answeredIds.has(questionId)) return;
+      if (!activeQuiz.some(question => question.id === questionId)) return;
+      answersById.set(questionId, answer);
+      answeredIds.add(questionId);
+    });
+
+    activeQuiz.forEach(question => {
+      const answer = answersById.get(question.id);
+      const selectedOption = answer ? Number.parseInt(answer.selectedOption, 10) : -1;
+      const isValidAnswer = Number.isInteger(selectedOption) && selectedOption >= 0 && selectedOption <= 3;
+      const isCorrect = isValidAnswer && selectedOption === question.correct;
+
+      if (isCorrect) {
         correctCount++;
       }
+
+      recordQuizAccuracy(room, socket.id, question, isCorrect);
     });
 
     socket.activeQuiz = null;
 
     // Forward to host to process ammo reward
-    const room = rooms[socket.roomCode];
     const hostSocket = getHostSocket(room);
     
     if (hostSocket) {
       hostSocket.emit('quiz-completed', {
         playerId: socket.id,
         correctCount,
+        accuracyReport: buildAccuracyReport(room),
         timestamp: Date.now()
       });
     }
+  });
+
+  socket.on('request-accuracy-report', () => {
+    if (!socket.roomCode || !rooms[socket.roomCode]) return;
+    if (!isHostForRoom(socket)) return;
+
+    socket.emit('accuracy-report', buildAccuracyReport(rooms[socket.roomCode]));
   });
   
   // Host broadcasts game state
@@ -716,6 +851,7 @@ io.on('connection', (socket) => {
     const room = rooms[socket.roomCode];
     room.state = 'playing';
     room.startedAt = Date.now();
+    room.accuracyStats = createAccuracyStats();
 
     io.to(socket.roomCode).emit('game-started', {
       roomCode: socket.roomCode,

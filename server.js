@@ -3,8 +3,10 @@ const http = require('http');
 const { Server } = require('socket.io');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const config = require('./shared/config');
 const questions = require('./shared/questions');
+const { sanitizePlayerName: sanitizeSharedPlayerName } = require('./shared/player-utils');
 const {
   DEFAULT_MAP_ID,
   getDefaultMap,
@@ -19,12 +21,13 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*",
+    origin(origin, callback) {
+      callback(null, isOriginAllowed(origin));
+    },
     methods: ["GET", "POST"],
     credentials: true
   },
   transports: ['polling', 'websocket'],
-  allowEIO3: true,
   pingTimeout: 60000,
   pingInterval: 25000
 });
@@ -33,15 +36,61 @@ const MAX_ROOM_PLAYERS = Math.min(config.MAX_PLAYERS, config.PLAYER_COLORS.lengt
 const MIN_MATCH_DURATION = 60;
 const MAX_MATCH_DURATION = 900;
 const SERVER_PORT = parsePort(process.env.PORT, config.SERVER_PORT);
-const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
 const MATCH_START_COUNTDOWN_MS = 5000;
-const MAX_PLAYER_NAME_LENGTH = 18;
+const PLAYER_RECONNECT_GRACE_MS = 15000;
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
+const PUBLIC_BASE_URL = normalizeBaseUrl(process.env.PUBLIC_BASE_URL || '');
+
+function parseAllowedOrigins(value) {
+  return String(value || '')
+    .split(',')
+    .map(origin => normalizeBaseUrl(origin.trim()))
+    .filter(Boolean);
+}
+
+function normalizeBaseUrl(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
+function getRequestBaseUrl(req) {
+  if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL;
+
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return host ? `${protocol}://${host}` : `http://localhost:${SERVER_PORT}`;
+}
+
+function getSocketBaseUrl(socket) {
+  if (PUBLIC_BASE_URL) return PUBLIC_BASE_URL;
+
+  const headers = socket.handshake.headers || {};
+  const protocol = headers['x-forwarded-proto'] || (socket.handshake.secure ? 'https' : 'http');
+  const host = headers['x-forwarded-host'] || headers.host;
+  return host ? `${protocol}://${host}` : `http://localhost:${SERVER_PORT}`;
+}
+
+function getPublicControllerUrlFromSocket(socket) {
+  return `${getSocketBaseUrl(socket)}/controller`;
+}
+
+function isOriginAllowed(origin) {
+  if (!origin || ALLOWED_ORIGINS.length === 0) return true;
+  return ALLOWED_ORIGINS.includes(normalizeBaseUrl(origin));
+}
 
 // Enable CORS for all routes
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  if (isOriginAllowed(origin)) {
+    res.header('Access-Control-Allow-Origin', origin || '*');
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  res.header('Vary', 'Origin');
+  if (req.method === 'OPTIONS') {
+    res.status(isOriginAllowed(origin) ? 204 : 403).end();
+    return;
+  }
   next();
 });
 
@@ -49,9 +98,12 @@ app.use((req, res, next) => {
 app.use('/host', express.static(path.join(__dirname, 'host')));
 app.use('/controller', express.static(path.join(__dirname, 'controller')));
 app.use('/shared', express.static(path.join(__dirname, 'shared')));
+app.use('/vendor/socket.io', express.static(path.join(__dirname, 'node_modules', 'socket.io', 'client-dist')));
+app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three')));
 
 // Routes
 app.get('/', (req, res) => {
+  const controllerUrl = `${getRequestBaseUrl(req)}/controller`;
   res.send(`
     <html>
       <head>
@@ -113,7 +165,7 @@ app.get('/', (req, res) => {
           <h1>Arena FPS</h1>
           <nav>
             <a href="/host">HOST DISPLAY</a>
-            <a href="${PUBLIC_CONTROLLER_URL}">MOBILE CONTROLLER</a>
+            <a href="${controllerUrl}">MOBILE CONTROLLER</a>
           </nav>
         </main>
       </body>
@@ -136,6 +188,7 @@ app.get('/favicon.ico', (req, res) => {
 // API endpoint to get config for clients
 app.get('/api/config', (req, res) => {
   const defaultMap = getDefaultMap();
+  const baseUrl = getRequestBaseUrl(req);
   res.json({
     MAX_PLAYERS: MAX_ROOM_PLAYERS,
     MIN_PLAYERS: config.MIN_PLAYERS,
@@ -156,7 +209,9 @@ app.get('/api/config', (req, res) => {
     DEFAULT_MAP_ID,
     MAP: defaultMap,
     MAPS: getMaps(),
-    MAP_MANIFEST: getMapManifest()
+    MAP_MANIFEST: getMapManifest(),
+    PUBLIC_BASE_URL: baseUrl,
+    PUBLIC_CONTROLLER_URL: `${baseUrl}/controller`
   });
 });
 
@@ -202,13 +257,7 @@ function sanitizePlayerInput(data = {}) {
 }
 
 function sanitizePlayerName(value, fallback = 'Player') {
-  const normalized = String(value || '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/[<>]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const truncated = Array.from(normalized).slice(0, MAX_PLAYER_NAME_LENGTH).join('').trim();
-  return truncated || fallback;
+  return sanitizeSharedPlayerName(value, fallback);
 }
 
 function createAccuracyStats() {
@@ -338,6 +387,60 @@ function getHostSocket(room) {
   return room ? io.sockets.sockets.get(room.hostId) : null;
 }
 
+function createPlayerToken() {
+  return crypto.randomBytes(18).toString('base64url');
+}
+
+function clearPlayerRemoval(player) {
+  if (player && player.removalTimeout) {
+    clearTimeout(player.removalTimeout);
+    player.removalTimeout = null;
+  }
+}
+
+function removeControllerFromRoom(roomCode, playerId, { notifyHost = true } = {}) {
+  const room = rooms[roomCode];
+  if (!room || !room.players[playerId]) return;
+
+  const player = room.players[playerId];
+  clearPlayerRemoval(player);
+
+  const idx = room.playerIds.indexOf(playerId);
+  if (idx > -1) {
+    room.playerIds.splice(idx, 1);
+  }
+
+  if (player.colorIndex !== undefined) {
+    releasePlayerColor(roomCode, player.colorIndex);
+  }
+
+  delete room.players[playerId];
+
+  if (notifyHost) {
+    const hostSocket = getHostSocket(room);
+    if (hostSocket) {
+      hostSocket.emit('player-disconnected', {
+        playerId,
+        timestamp: Date.now()
+      });
+    }
+  }
+
+  if (room.state === 'countdown' && room.playerIds.length < room.settings.minPlayers) {
+    cancelRoomCountdown(roomCode);
+  }
+
+  emitLobbyState(roomCode);
+}
+
+function findRecoverablePlayer(room, token) {
+  if (!room || !token) return null;
+  return room.playerIds.find(playerId => {
+    const player = room.players[playerId];
+    return player && player.disconnected && player.playerToken === token;
+  }) || null;
+}
+
 function createDefaultRoomSettings() {
   const maxPlayers = MAX_ROOM_PLAYERS;
   return {
@@ -394,7 +497,8 @@ function getLobbyState(roomCode) {
       color: room.players[playerId].color,
       colorName: room.players[playerId].colorName,
       playerName: room.players[playerId].playerName,
-      joinedAt: room.players[playerId].joinedAt
+      joinedAt: room.players[playerId].joinedAt,
+      disconnected: Boolean(room.players[playerId].disconnected)
     }))
   };
 }
@@ -560,7 +664,7 @@ io.on('connection', (socket) => {
       roomCode: roomCode,
       hostIP: hostIP,
       port: SERVER_PORT,
-      joinUrl: PUBLIC_CONTROLLER_URL,
+      joinUrl: getPublicControllerUrlFromSocket(socket),
       settings: rooms[roomCode].settings,
       map: getMapById(rooms[roomCode].settings.mapId),
       maxAllowedPlayers: MAX_ROOM_PLAYERS
@@ -571,26 +675,88 @@ io.on('connection', (socket) => {
   // Controller joins room
   socket.on('join-room', (data = {}) => {
     const roomCode = String(data.roomCode || '').trim();
-    
+    const requestedToken = String(data.playerToken || '').trim();
     const room = rooms[roomCode];
     
     if (!room) {
       socket.emit('join-error', { message: 'Room not found' });
       return;
     }
-    
-    if (room.state !== 'lobby') {
+
+    const recoverablePlayerId = findRecoverablePlayer(room, requestedToken);
+
+    if (room.state !== 'lobby' && !recoverablePlayerId) {
       socket.emit('join-error', {
         message: room.state === 'countdown' ? 'Game is starting' : 'Game already started'
       });
       return;
     }
-    
-    if (room.playerIds.length >= room.settings.maxPlayers) {
+
+    if (!recoverablePlayerId && room.playerIds.length >= room.settings.maxPlayers) {
       socket.emit('join-error', { message: 'Room is full' });
       return;
     }
-    
+
+    if (recoverablePlayerId) {
+      const previousPlayerId = recoverablePlayerId;
+      const player = room.players[previousPlayerId];
+      clearPlayerRemoval(player);
+
+      delete room.players[previousPlayerId];
+      room.players[socket.id] = {
+        ...player,
+        disconnected: false,
+        disconnectedAt: null
+      };
+      const playerIndex = room.playerIds.indexOf(previousPlayerId);
+      if (playerIndex > -1) {
+        room.playerIds[playerIndex] = socket.id;
+      }
+      if (room.accuracyStats && room.accuracyStats.players[previousPlayerId]) {
+        room.accuracyStats.players[socket.id] = {
+          ...room.accuracyStats.players[previousPlayerId],
+          playerId: socket.id
+        };
+        delete room.accuracyStats.players[previousPlayerId];
+      }
+
+      socket.roomCode = roomCode;
+      socket.deviceType = 'controller';
+      socket.colorIndex = player.colorIndex;
+      socket.playerToken = player.playerToken;
+      socket.join(roomCode);
+
+      socket.emit('room-joined', {
+        playerId: socket.id,
+        previousPlayerId,
+        playerToken: player.playerToken,
+        color: player.color,
+        colorName: player.colorName,
+        playerName: player.playerName,
+        roomCode,
+        state: room.state,
+        settings: room.settings,
+        map: getMapById(room.settings.mapId),
+        reconnected: true
+      });
+
+      const hostSocket = getHostSocket(room);
+      if (hostSocket) {
+        hostSocket.emit('player-reconnected', {
+          previousPlayerId,
+          playerId: socket.id,
+          color: player.color,
+          colorName: player.colorName,
+          playerName: player.playerName,
+          timestamp: Date.now()
+        });
+      }
+
+      console.log(`Player ${previousPlayerId} reconnected as ${socket.id} in room ${roomCode}`);
+      emitLobbyState(roomCode);
+      return;
+    }
+
     const colorInfo = assignPlayerColor(roomCode);
     if (!colorInfo) {
       socket.emit('join-error', { message: 'No colors available' });
@@ -602,6 +768,7 @@ io.on('connection', (socket) => {
     socket.roomCode = roomCode;
     socket.deviceType = 'controller';
     socket.colorIndex = colorInfo.colorIndex;
+    socket.playerToken = createPlayerToken();
     socket.join(roomCode);
     
     room.playerIds.push(socket.id);
@@ -609,8 +776,12 @@ io.on('connection', (socket) => {
       color: colorInfo.color,
       colorName: colorInfo.colorName,
       playerName,
+      playerToken: socket.playerToken,
       colorIndex: colorInfo.colorIndex,
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      disconnected: false,
+      disconnectedAt: null,
+      removalTimeout: null
     };
     ensureAccuracyPlayer(room, socket.id);
     
@@ -622,6 +793,7 @@ io.on('connection', (socket) => {
       color: colorInfo.color,
       colorName: colorInfo.colorName,
       playerName,
+      playerToken: socket.playerToken,
       roomCode: roomCode,
       state: room.state,
       settings: room.settings,
@@ -878,33 +1050,26 @@ io.on('connection', (socket) => {
         delete roomColors[socket.roomCode];
         console.log(`Room ${socket.roomCode} closed (host disconnected)`);
       } else if (socket.deviceType === 'controller') {
-        // Player disconnected
-        const idx = room.playerIds.indexOf(socket.id);
-        if (idx > -1) {
-          room.playerIds.splice(idx, 1);
-        }
-        
-        // Release color
-        if (socket.colorIndex !== undefined) {
-          releasePlayerColor(socket.roomCode, socket.colorIndex);
-        }
-        
-        delete room.players[socket.id];
-        
-        // Notify host
+        const player = room.players[socket.id];
+        if (!player) return;
+
+        player.disconnected = true;
+        player.disconnectedAt = Date.now();
+        player.removalTimeout = setTimeout(() => {
+          removeControllerFromRoom(socket.roomCode, socket.id);
+        }, PLAYER_RECONNECT_GRACE_MS);
+
         const hostSocket = getHostSocket(room);
         if (hostSocket) {
           hostSocket.emit('player-disconnected', {
             playerId: socket.id,
+            recoverable: true,
+            reconnectGraceMs: PLAYER_RECONNECT_GRACE_MS,
             timestamp: Date.now()
           });
         }
-        
-        if (room.state === 'countdown' && room.playerIds.length < room.settings.minPlayers) {
-          cancelRoomCountdown(socket.roomCode);
-        }
 
-        console.log(`Player ${socket.id} left room ${socket.roomCode}`);
+        console.log(`Player ${socket.id} disconnected from room ${socket.roomCode}`);
         emitLobbyState(socket.roomCode);
       }
     }

@@ -342,3 +342,55 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   assert.match(logs.stdout, /MULTIPLAYER FPS SERVER STARTED/);
   assert.equal(logs.stderr.trim(), '');
 });
+
+test('controller can reclaim a recoverable player slot with its token', async t => {
+  const server = await startServer(t);
+  const host = connectSocket(server.port);
+  const firstController = connectSocket(server.port);
+
+  t.after(() => {
+    host.close();
+    firstController.close();
+  });
+
+  await Promise.all([
+    waitForEvent(host, 'connect'),
+    waitForEvent(firstController, 'connect')
+  ]);
+
+  const roomCreatedPromise = waitForEvent(host, 'room-created');
+  host.emit('create-room', { deviceType: 'host' });
+  const roomCreated = await roomCreatedPromise;
+
+  const joinedPromise = waitForEvent(firstController, 'room-joined');
+  firstController.emit('join-room', { roomCode: roomCreated.roomCode, playerName: 'Reconnect Me' });
+  const joined = await joinedPromise;
+  assert.equal(typeof joined.playerToken, 'string');
+  assert.notEqual(joined.playerToken, '');
+
+  const disconnectedPromise = waitForEventWhere(host, 'player-disconnected', event =>
+    event.playerId === joined.playerId && event.recoverable === true
+  );
+  firstController.disconnect();
+  await disconnectedPromise;
+
+  const secondController = connectSocket(server.port);
+  t.after(() => secondController.close());
+  await waitForEvent(secondController, 'connect');
+
+  const reconnectedHostPromise = waitForEventWhere(host, 'player-reconnected', event =>
+    event.previousPlayerId === joined.playerId
+  );
+  const rejoinedPromise = waitForEvent(secondController, 'room-joined');
+  secondController.emit('join-room', {
+    roomCode: roomCreated.roomCode,
+    playerName: 'Reconnect Me',
+    playerToken: joined.playerToken
+  });
+
+  const [hostReconnect, rejoined] = await Promise.all([reconnectedHostPromise, rejoinedPromise]);
+  assert.equal(rejoined.reconnected, true);
+  assert.equal(rejoined.previousPlayerId, joined.playerId);
+  assert.equal(rejoined.playerToken, joined.playerToken);
+  assert.equal(hostReconnect.playerId, rejoined.playerId);
+});

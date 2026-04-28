@@ -13,7 +13,7 @@
       <h1>ARENA FPS</h1>
 
       <label class="field-label" for="server-url">Game Site</label>
-      <input type="url" id="server-url" placeholder="https://fps-quiz-game-production.up.railway.app" autocomplete="url" inputmode="url">
+      <input type="url" id="server-url" placeholder="http://192.168.1.10:3000" autocomplete="url" inputmode="url">
 
       <label class="field-label" for="player-name-input">Player Name</label>
       <input type="text" id="player-name-input" placeholder="Your callsign" maxlength="18" autocomplete="nickname">
@@ -119,12 +119,13 @@
     </div>
   </div>
 
-  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <script src="/vendor/socket.io/socket.io.min.js"></script>
+  <script src="/shared/player-utils.js"></script>
   <script type="importmap">
     {
       "imports": {
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        "three": "/vendor/three/build/three.module.js",
+        "three/addons/": "/vendor/three/examples/jsm/"
       }
     }
   </script>

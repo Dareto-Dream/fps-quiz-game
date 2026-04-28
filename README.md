@@ -1,137 +1,132 @@
-# Arena FPS - Browser-Based 3D Multiplayer FPS
+# Arena FPS - Browser-Based Quiz Shooter
 
-A LAN party game where one desktop/laptop displays all players as a spectator view, and mobile phones act as individual controllers.
+A LAN party game where one desktop or laptop runs the host display and phones join as mobile controllers. Players fight in a Three.js arena and answer quiz questions to earn reload ammo.
 
 ## Features
 
-- **Host Display**: 3D arena rendered with Three.js showing all connected players
-- **Mobile Controllers**: Touch-based controls with virtual joystick and fire button
-- **Quiz-for-Ammo**: Run out of ammo? Answer trivia questions to reload!
-- **Kill Streaks**: Get 3+ kills without dying to become the streak leader
-- **Dynamic Camera**: Camera automatically follows the streak leader
-- **5-Minute Matches**: Time-limited rounds with winner announcement
+- Host display with 3D arena rendering, leaderboard, kill feed, lobby settings, and match results
+- Mobile controller with movement/look touch zones, firing, reload quiz, HUD, and first-person arena view
+- Quiz-for-ammo reload flow with per-question and per-player accuracy reporting
+- Configurable lobby size, minimum players, match duration, and map
+- Multiple validated JSON maps with shared host/controller rendering
+- Short controller reconnect grace period so a phone refresh can reclaim its slot
+- Local browser dependencies served from `node_modules` instead of external CDNs
 
 ## Quick Start
 
-### 1. Install Dependencies
-
 ```bash
 npm install
-```
-
-### 2. Start the Server
-
-```bash
 npm start
 ```
 
-The server will display:
-- Local URL: `http://localhost:3000`
-- Network URL: `http://[YOUR_IP]:3000`
+The server prints local and network URLs. Open the host display on the desktop:
 
-### 3. Open Host Display
-
-On your desktop/laptop browser, go to:
-```
+```text
 http://localhost:3000/host
 ```
 
-You'll see the IP address and Room Code displayed on screen.
+Phones should open the controller URL shown by the host lobby QR/link, or:
 
-### 4. Connect Controllers (Mobile Phones)
-
-On each mobile phone browser, go to:
-```
-http://[HOST_IP]:3000/controller
+```text
+http://<HOST_IP>:3000/controller
 ```
 
-Enter:
-- **Server IP**: The IP address shown on the host screen
-- **Port**: 3000
-- **Room Code**: The 4-digit code shown on the host screen
+## Configuration
 
-## Controls (Mobile)
+Environment variables:
+
+- `PORT`: server port. Defaults to `3000`.
+- `PUBLIC_BASE_URL`: public origin used for generated controller links, for example `https://example.com`. If omitted, the server derives it from the incoming request.
+- `ALLOWED_ORIGINS`: comma-separated list of allowed browser origins for HTTP/Socket.IO CORS. If omitted, all origins are accepted for easier LAN play.
+
+Examples:
+
+```bash
+PORT=3001 npm start
+PUBLIC_BASE_URL=https://game.example.com ALLOWED_ORIGINS=https://game.example.com npm start
+```
+
+PowerShell:
+
+```powershell
+$env:PORT = "3001"; npm start
+```
+
+## Controls
 
 | Control | Action |
-|---------|--------|
-| Left side touch & drag | Move (floating joystick) |
-| Right side touch & drag | Look around |
-| FIRE button | Shoot |
-| RELOAD button | Open quiz to get ammo |
+| --- | --- |
+| Left touch zone | Move |
+| Right touch zone | Look |
+| FIRE | Shoot |
+| RLD | Request reload quiz |
 
 ## Game Rules
 
-- **Health**: 100 HP - Each hit does 25 damage (50 for headshots)
-- **Starting Ammo**: 15 rounds
-- **Ammo Reload**: Answer a 3-question quiz
-  - 1/3 correct = 3 rounds
-  - 2/3 correct = 5 rounds
-  - 3/3 correct = 7 rounds
-- **Respawn**: 3 seconds after death
-- **Spawn Protection**: 2 seconds of invincibility after spawning
-- **Match Duration**: 5 minutes
-- **Streak Leader**: 3+ kills without dying - camera follows you!
+- Health: 100 HP
+- Damage: 25 per body hit, 50 per headshot
+- Starting ammo: 15 rounds
+- Reload quiz rewards: 1/3 = 3 rounds, 2/3 = 5 rounds, 3/3 = 7 rounds
+- Respawn: 3 seconds after death
+- Spawn protection: 2 seconds
+- Default match duration: 5 minutes
+- Streak leader: 3+ kills without dying
 
-## Architecture
+## Project Structure
 
-```
-Host (Desktop)                    Server                    Controller (Mobile)
-    |                               |                              |
-    |----create-room--------------->|                              |
-    |<---room-created---------------|                              |
-    |                               |<-------join-room-------------|
-    |<---player-connected-----------|-------room-joined----------->|
-    |                               |                              |
-    |<---player-input---------------|<------player-input-----------|
-    |    (process game logic)       |    (forward)                 |
-    |----game-state---------------->|-------game-state------------>|
-    |----kill-event---------------->|-------kill-event------------>|
-```
-
-## File Structure
-
-```
-fps-game/
-├── server.js              # Node.js + Socket.IO server
-├── package.json           # Dependencies
+```text
+fps-quiz-game/
+├── server.js                  # Express + Socket.IO server
+├── package.json               # Scripts and dependencies
 ├── host/
-│   ├── index.html         # Host page with UI overlays
-│   ├── game.js            # Three.js game (ES modules)
-│   └── styles.css         # Host styling
+│   ├── index.html             # Host display markup
+│   ├── game.js                # Host game simulation and rendering
+│   └── styles.css             # Host styling
 ├── controller/
-│   ├── index.html         # Controller page
-│   └── sketch.js          # p5.js touch controls
-└── shared/
-    ├── config.js          # Game configuration
-    └── questions.js       # Quiz questions
+│   ├── index.html             # Mobile controller markup
+│   ├── sketch.js              # Controller input, HUD, and rendering
+│   └── styles.css             # Controller styling
+├── shared/
+│   ├── config.js              # Server-side gameplay defaults
+│   ├── questions.js           # Quiz content
+│   ├── movement.mjs           # Shared movement/collision helpers
+│   ├── map-service.js         # Map loading and validation
+│   ├── map-renderer.mjs       # Shared map scene renderer
+│   ├── player-utils.js        # Shared player-name sanitizer
+│   ├── shot-visuals.mjs       # Shared projectile visual helpers
+│   ├── maps/*.json            # Authored maps
+│   └── audio/*.ogg            # Music/audio assets
+├── strudel/*.strudel          # Source music patterns
+├── test/*.js                  # Socket, browser, movement, and content tests
+└── STANDARDS.md               # Authoring standards for maps and questions
 ```
 
-## Browser Support
+## Tests
 
-- **Host**: Chrome, Firefox, Safari, Edge (modern versions)
-- **Controller**: iOS Safari, Chrome for Android
+```bash
+npm test
+```
 
-## Network Requirements
+The test suite runs serially because it starts real local servers and a browser smoke test. Coverage includes:
 
-- All devices must be on the same local network (WiFi)
-- Port 3000 must be accessible
-- If firewall issues occur, allow Node.js through your firewall
+- Socket room flow, quiz validation, and host event forwarding
+- Movement and map collision helpers
+- Browser smoke test for host/controller startup
+- Question, map, and shared sanitizer content validation
 
-## Troubleshooting
+## Content Editing
 
-**Can't connect from mobile:**
-- Ensure mobile device is on same WiFi network
-- Check that the IP address is correct
-- Try disabling firewall temporarily
+Quiz questions live in `shared/questions.js`. Maps live in `shared/maps/*.json`. Follow `STANDARDS.md` when editing either surface.
 
-**Lag or stuttering:**
-- Reduce number of players
-- Close other browser tabs
-- Ensure good WiFi signal
+After content changes:
 
-**Quiz not appearing:**
-- Tap the RELOAD button when you have less than 30 ammo
+```bash
+npm test
+```
 
-## License
+## Network Notes
 
-MIT
+- All devices must be able to reach the host server.
+- On a LAN, use the network URL printed by the server.
+- On a deployed host, set `PUBLIC_BASE_URL` so generated QR links point at the correct public origin.
+- If CORS is locked down with `ALLOWED_ORIGINS`, include the exact origin users will open in the browser.

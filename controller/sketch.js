@@ -10,6 +10,7 @@ let socket;
 let connected = false;
 let playerId = '';
 let playerName = '';
+let playerToken = '';
 let playerColor = '#ffffff';
 let roomCode = '';
 let lobbyState = null;
@@ -17,7 +18,7 @@ let inputInterval = null;
 let lobbyCountdownInterval = null;
 let animationStarted = false;
 let matchStarted = false;
-const PUBLIC_SERVER_URL = 'https://fps-quiz-game-production.up.railway.app';
+let publicServerUrl = window.location.origin;
 
 // Player stats
 let myHealth = 100;
@@ -100,7 +101,7 @@ document.addEventListener('DOMContentLoaded', function() {
   syncViewportHeight();
   loadClientConfig();
 
-  document.getElementById('server-url').value = PUBLIC_SERVER_URL;
+  document.getElementById('server-url').value = publicServerUrl;
   document.getElementById('player-name-input').value = getSavedPlayerName();
   
   // Event listeners
@@ -133,6 +134,8 @@ async function loadClientConfig() {
   try {
     const response = await fetch('/api/config');
     const serverConfig = await response.json();
+    publicServerUrl = serverConfig.PUBLIC_BASE_URL || publicServerUrl;
+    document.getElementById('server-url').value = publicServerUrl;
     moveSpeed = Number(serverConfig.MOVE_SPEED) || moveSpeed;
     lookSensitivity = Number(serverConfig.LOOK_SENSITIVITY) || lookSensitivity;
     inputRate = Number(serverConfig.INPUT_RATE) || inputRate;
@@ -485,17 +488,23 @@ function connectToServer() {
   }, 15000);
   
   socket.on('connect', () => {
-    socket.emit('join-room', { roomCode: code, playerName: requestedPlayerName });
+    socket.emit('join-room', {
+      roomCode: code,
+      playerName: requestedPlayerName,
+      playerToken: getSavedPlayerToken(code)
+    });
   });
   
   socket.on('room-joined', (data) => {
     clearTimeout(connectionTimeout);
     connected = true;
     playerId = data.playerId;
+    playerToken = data.playerToken || playerToken;
     playerName = data.playerName || requestedPlayerName;
     playerColor = data.color;
     roomCode = data.roomCode;
     savePlayerName(playerName);
+    savePlayerToken(roomCode, playerToken);
     const roomMap = getMapFromPayload(data);
     if (roomMap) {
       applyActiveMap(roomMap, { rebuild: Boolean(scene) });
@@ -560,12 +569,7 @@ function showConnectionError(message) {
 }
 
 function sanitizeLocalPlayerName(value) {
-  const normalized = String(value || '')
-    .replace(/[\u0000-\u001f\u007f]/g, ' ')
-    .replace(/[<>]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return Array.from(normalized).slice(0, 18).join('').trim();
+  return window.ArenaPlayerUtils.sanitizePlayerName(value);
 }
 
 function getSavedPlayerName() {
@@ -579,6 +583,23 @@ function getSavedPlayerName() {
 function savePlayerName(name) {
   try {
     localStorage.setItem('arena-fps-player-name', sanitizeLocalPlayerName(name));
+  } catch (error) {
+    // Storage can be blocked in private browsing contexts.
+  }
+}
+
+function getSavedPlayerToken(code) {
+  try {
+    return localStorage.getItem(`arena-fps-player-token-${code}`) || '';
+  } catch (error) {
+    return '';
+  }
+}
+
+function savePlayerToken(code, token) {
+  if (!code || !token) return;
+  try {
+    localStorage.setItem(`arena-fps-player-token-${code}`, token);
   } catch (error) {
     // Storage can be blocked in private browsing contexts.
   }
@@ -1082,8 +1103,12 @@ function updateHUD() {
   }
   
   // Stats with streak indicator
-  document.getElementById('stats-display').innerHTML =
-    `K/D ${myKills}/${myDeaths}<br>Streak ${myStreak}${myStreak >= 3 ? ' HOT' : ''}`;
+  const statsDisplay = document.getElementById('stats-display');
+  statsDisplay.replaceChildren(
+    document.createTextNode(`K/D ${myKills}/${myDeaths}`),
+    document.createElement('br'),
+    document.createTextNode(`Streak ${myStreak}${myStreak >= 3 ? ' HOT' : ''}`)
+  );
 }
 
 function updateTimer() {
@@ -1133,7 +1158,7 @@ function showNotification(elementId, text, duration) {
 // ============================================
 function renderQuiz() {
   const container = document.getElementById('quiz-questions');
-  container.innerHTML = '';
+  container.replaceChildren();
   
   quizQuestions.forEach((q, qIndex) => {
     const questionDiv = document.createElement('div');

@@ -46,7 +46,7 @@ const CONFIG = {
   ]
 };
 
-const PUBLIC_CONTROLLER_URL = 'https://fps-quiz-game-production.up.railway.app/controller';
+let publicControllerUrl = `${window.location.origin}/controller`;
 const MATCH_COUNTDOWN_MUSIC_THRESHOLD = 15;
 const MUSIC_TRACKS = {
   waiting: { src: '/shared/audio/waiting.ogg', volume: 0.36, loop: true },
@@ -67,7 +67,7 @@ let streakLeader = null;
 let matchTimer = CONFIG.MATCH_DURATION;
 let matchActive = false;
 let roomCode = '';
-let joinUrl = PUBLIC_CONTROLLER_URL;
+let joinUrl = publicControllerUrl;
 let lobbyCountdownInterval = null;
 let lobbyState = null;
 let lobbySettings = {
@@ -116,6 +116,8 @@ async function init() {
     const response = await fetch('/api/config');
     const serverConfig = await response.json();
     Object.assign(CONFIG, serverConfig);
+    publicControllerUrl = serverConfig.PUBLIC_CONTROLLER_URL || publicControllerUrl;
+    joinUrl = publicControllerUrl;
     initializeMaps(serverConfig);
   } catch (e) {
     console.log('Using default config');
@@ -497,7 +499,7 @@ function initSocket() {
   
   socket.on('room-created', (data) => {
     roomCode = data.roomCode;
-    joinUrl = data.joinUrl || PUBLIC_CONTROLLER_URL;
+    joinUrl = data.joinUrl || publicControllerUrl;
     lobbySettings = data.settings || lobbySettings;
     
     document.getElementById('waiting-message').style.display = 'none';
@@ -534,8 +536,17 @@ function initSocket() {
   
   socket.on('player-disconnected', (data) => {
     console.log(`Player disconnected: ${data.playerId}`);
+    if (data.recoverable && players[data.playerId]) {
+      players[data.playerId].disconnected = true;
+      updateLobbyStartState();
+      return;
+    }
     removePlayer(data.playerId);
     updatePlayerCount();
+  });
+
+  socket.on('player-reconnected', (data) => {
+    handlePlayerReconnected(data);
   });
   
   socket.on('player-input', (data) => {
@@ -684,6 +695,30 @@ function removePlayer(playerId) {
     updateStreakLeader();
     updateLobbyStartState();
   }
+}
+
+function handlePlayerReconnected(data = {}) {
+  const previousPlayerId = data.previousPlayerId;
+  const playerId = data.playerId;
+  if (!previousPlayerId || !playerId || !players[previousPlayerId]) {
+    createPlayer(playerId, data.color, data.colorName, data.playerName);
+    return;
+  }
+
+  players[playerId] = players[previousPlayerId];
+  delete players[previousPlayerId];
+  players[playerId].id = playerId;
+  players[playerId].playerName = data.playerName || players[playerId].playerName;
+  players[playerId].disconnected = false;
+  players[playerId].body.userData.playerId = playerId;
+  players[playerId].head.userData.playerId = playerId;
+
+  if (streakLeader === previousPlayerId) {
+    streakLeader = playerId;
+  }
+
+  updateLeaderboard();
+  updateLobbyStartState();
 }
 
 function getSpawnPoint(index = Math.floor(Math.random() * CONFIG.SPAWN_POINTS.length)) {
@@ -1409,25 +1444,60 @@ function stopLobbyCountdownTicker() {
 }
 
 function updateLeaderboard() {
+  const container = document.getElementById('leaderboard-content');
   const sorted = Object.values(players).sort((a, b) => b.kills - a.kills);
+  container.replaceChildren();
   
   if (sorted.length === 0) {
-    document.getElementById('leaderboard-content').innerHTML = 
-      '<div class="no-players">Waiting for players...</div>';
+    const empty = document.createElement('div');
+    empty.className = 'no-players';
+    empty.textContent = 'Waiting for players...';
+    container.appendChild(empty);
     return;
   }
-  
-  const html = sorted.map((p, i) => `
-    <div class="leaderboard-entry ${p.streak >= CONFIG.STREAK_THRESHOLD ? 'streak' : ''}">
-      <span class="rank">${i + 1}.</span>
-      <span class="player-name" style="color: ${p.color}">${escapeHtml(getPlayerDisplayName(p))}</span>
-      <span class="stats">${p.kills}-${p.deaths}</span>
-      ${p.streak >= CONFIG.STREAK_THRESHOLD ? `<span class="streak-indicator">STK ${p.streak}</span>` : ''}
-      ${p.id === streakLeader ? '<span class="crown">LEAD</span>' : ''}
-    </div>
-  `).join('');
-  
-  document.getElementById('leaderboard-content').innerHTML = html;
+
+  sorted.forEach((player, index) => {
+    container.appendChild(createLeaderboardEntry(player, index));
+  });
+}
+
+function createLeaderboardEntry(player, index) {
+  const entry = document.createElement('div');
+  entry.className = 'leaderboard-entry';
+  if (player.streak >= CONFIG.STREAK_THRESHOLD) {
+    entry.classList.add('streak');
+  }
+
+  const rank = document.createElement('span');
+  rank.className = 'rank';
+  rank.textContent = `${index + 1}.`;
+
+  const name = document.createElement('span');
+  name.className = 'player-name';
+  name.style.color = player.color;
+  name.textContent = getPlayerDisplayName(player);
+
+  const stats = document.createElement('span');
+  stats.className = 'stats';
+  stats.textContent = `${player.kills}-${player.deaths}`;
+
+  entry.append(rank, name, stats);
+
+  if (player.streak >= CONFIG.STREAK_THRESHOLD) {
+    const streak = document.createElement('span');
+    streak.className = 'streak-indicator';
+    streak.textContent = `STK ${player.streak}`;
+    entry.appendChild(streak);
+  }
+
+  if (player.id === streakLeader) {
+    const crown = document.createElement('span');
+    crown.className = 'crown';
+    crown.textContent = 'LEAD';
+    entry.appendChild(crown);
+  }
+
+  return entry;
 }
 
 function updatePlayerCount() {
@@ -1437,15 +1507,6 @@ function updatePlayerCount() {
 
 function getPlayerDisplayName(player) {
   return (player && (player.playerName || player.colorName)) || 'Player';
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 function requestAccuracyReport() {
@@ -1703,23 +1764,8 @@ function endMatch() {
   // Show end screen
   const endScreen = document.getElementById('match-end-screen');
   endScreen.style.display = 'flex';
-  
-  if (winner) {
-    document.getElementById('winner-display').innerHTML = `
-      WINNER<br>
-      <span class="winner-name" style="color: ${winner.color}">${escapeHtml(getPlayerDisplayName(winner))}</span><br>
-      ${winner.kills} Kills
-    `;
-  } else {
-    document.getElementById('winner-display').innerHTML = 'No winner';
-  }
-  
-  const scoresHtml = sorted.map((p, i) => `
-    <div class="final-score-entry" style="color: ${p.color}">
-      ${i + 1}. ${escapeHtml(getPlayerDisplayName(p))}: ${p.kills} kills, ${p.deaths} deaths
-    </div>
-  `).join('');
-  document.getElementById('final-scores').innerHTML = scoresHtml;
+  renderWinnerDisplay(winner);
+  renderFinalScores(sorted);
   
   // Broadcast match end
   socket.emit('match-end', {
@@ -1741,6 +1787,38 @@ function endMatch() {
   
   // Restart button
   document.getElementById('restart-btn').onclick = restartMatch;
+}
+
+function renderWinnerDisplay(winner) {
+  const display = document.getElementById('winner-display');
+  display.replaceChildren();
+
+  if (!winner) {
+    display.textContent = 'No winner';
+    return;
+  }
+
+  const label = document.createTextNode('WINNER');
+  const name = document.createElement('span');
+  name.className = 'winner-name';
+  name.style.color = winner.color;
+  name.textContent = getPlayerDisplayName(winner);
+  const kills = document.createTextNode(`${winner.kills} Kills`);
+
+  display.append(label, document.createElement('br'), name, document.createElement('br'), kills);
+}
+
+function renderFinalScores(sortedPlayers) {
+  const scores = document.getElementById('final-scores');
+  scores.replaceChildren();
+
+  sortedPlayers.forEach((player, index) => {
+    const entry = document.createElement('div');
+    entry.className = 'final-score-entry';
+    entry.style.color = player.color;
+    entry.textContent = `${index + 1}. ${getPlayerDisplayName(player)}: ${player.kills} kills, ${player.deaths} deaths`;
+    scores.appendChild(entry);
+  });
 }
 
 function restartMatch() {

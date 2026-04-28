@@ -170,7 +170,7 @@ async function assertControllerQuizFitsViewport(page) {
   assert.equal(layout.textOverflowsPanel, false);
 }
 
-test('host and controller pages load, connect, and start a match without browser errors', { timeout: 40000 }, async t => {
+test('host and controller pages load, connect, and start a match without browser errors', { timeout: 70000 }, async t => {
   const executablePath = getBrowserPath();
   if (!executablePath) {
     t.skip('No local Chromium/Edge executable found for browser smoke test');

@@ -151,7 +151,7 @@ Prefer setting `timeOfDay` first and only overriding individual values when a ma
 
 Spawn authoring rules:
 
-- Provide at least as many spawn points as the lobby player cap. The current cap is eight players because there are eight configured player colors.
+- Provide at least eight spawn points. The lobby defaults to 24 players and can be raised to 30, so extra spawn variety is strongly preferred; when there are more players than spawns, spawn points are reused.
 - Place spawns away from walls and collidable obstacles. Use at least the player radius margin, currently about `0.45` units, plus extra breathing room.
 - Do not place spawns inside boxes. The loader checks arena bounds, but it does not reject spawns that overlap obstacles.
 - Prefer varied spawn directions so players enter the match facing useful sightlines instead of walls.

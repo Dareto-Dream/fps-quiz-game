@@ -192,6 +192,8 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   const roomCreated = await roomCreatedPromise;
   assert.equal(roomCreated.port, server.port);
   assert.match(roomCreated.roomCode, /^\d{4}$/);
+  assert.equal(roomCreated.maxAllowedPlayers, 30);
+  assert.equal(roomCreated.settings.maxPlayers, 24);
 
   const joinedPromise = waitForEvent(controller, 'room-joined');
   const playerConnectedPromise = waitForEvent(host, 'player-connected');

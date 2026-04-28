@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const test = require('node:test');
 const questions = require('../shared/questions');
+const config = require('../shared/config');
 const { getMaps } = require('../shared/map-service');
 const { sanitizePlayerName } = require('../shared/player-utils');
 
@@ -55,6 +56,13 @@ test('shared player-name sanitizer is consistent and bounded', () => {
   assert.equal(sanitizePlayerName('  Ace <Pilot>\n'), 'Ace Pilot');
   assert.equal(sanitizePlayerName('', 'Player'), 'Player');
   assert.equal(Array.from(sanitizePlayerName('12345678901234567890')).length, 18);
+});
+
+test('player cap has enough colors for every allowed slot', () => {
+  assert.equal(config.MAX_PLAYERS, 30);
+  assert.equal(config.DEFAULT_MAX_PLAYERS, 24);
+  assert.ok(config.PLAYER_COLORS.length >= config.MAX_PLAYERS);
+  assert.ok(config.COLOR_NAMES.length >= config.MAX_PLAYERS);
 });
 
 function spawnOverlapsBox(spawn, obstacle, playerRadius = 0.45) {

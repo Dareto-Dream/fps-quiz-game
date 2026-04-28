@@ -8,6 +8,7 @@ A LAN party game where one desktop or laptop runs the host display and phones jo
 - Mobile controller with movement/look touch zones, firing, reload quiz, HUD, and first-person arena view
 - Quiz-for-ammo reload flow with per-question and per-player accuracy reporting
 - Configurable lobby size, minimum players, match duration, and map
+- 24-player default lobby size, configurable up to 30 players
 - Multiple validated JSON maps with shared host/controller rendering
 - Short controller reconnect grace period so a phone refresh can reclaim its slot
 - Local browser dependencies served from `node_modules` instead of external CDNs

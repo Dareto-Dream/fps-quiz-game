@@ -36,6 +36,10 @@ const MAX_ROOM_PLAYERS = Math.min(config.MAX_PLAYERS, config.PLAYER_COLORS.lengt
 const MIN_MATCH_DURATION = 60;
 const MAX_MATCH_DURATION = 900;
 const SERVER_PORT = parsePort(process.env.PORT, config.SERVER_PORT);
+const DEFAULT_ROOM_PLAYERS = Math.min(
+  Math.max(1, Number.parseInt(config.DEFAULT_MAX_PLAYERS, 10) || MAX_ROOM_PLAYERS),
+  MAX_ROOM_PLAYERS
+);
 const MATCH_START_COUNTDOWN_MS = 5000;
 const PLAYER_RECONNECT_GRACE_MS = 15000;
 const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
@@ -191,6 +195,7 @@ app.get('/api/config', (req, res) => {
   const baseUrl = getRequestBaseUrl(req);
   res.json({
     MAX_PLAYERS: MAX_ROOM_PLAYERS,
+    DEFAULT_MAX_PLAYERS: DEFAULT_ROOM_PLAYERS,
     MIN_PLAYERS: config.MIN_PLAYERS,
     PLAYER_MAX_HEALTH: config.PLAYER_MAX_HEALTH,
     PLAYER_MAX_AMMO: config.PLAYER_MAX_AMMO,
@@ -442,7 +447,7 @@ function findRecoverablePlayer(room, token) {
 }
 
 function createDefaultRoomSettings() {
-  const maxPlayers = MAX_ROOM_PLAYERS;
+  const maxPlayers = DEFAULT_ROOM_PLAYERS;
   return {
     maxPlayers,
     minPlayers: Math.min(Math.max(config.MIN_PLAYERS || 1, 1), maxPlayers),

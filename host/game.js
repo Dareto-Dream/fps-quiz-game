@@ -21,10 +21,11 @@ const CONFIG = {
   STREAK_THRESHOLD: 3,
   QUIZ_REWARDS: { 0: 0, 1: 3, 2: 5, 3: 7 },
   DEFAULT_MAP_ID: 'classic',
+  DEFAULT_MAX_PLAYERS: 24,
   MAPS: [],
   MAP: null,
   ARENA: { WIDTH: 50, DEPTH: 50, WALL_HEIGHT: 10 },
-  MAX_PLAYERS: 24,
+  MAX_PLAYERS: 30,
   SPAWN_POINTS: [
     // Corners
     { x: -20, z: -20 }, { x: 20, z: -20 },
@@ -71,7 +72,7 @@ let joinUrl = publicControllerUrl;
 let lobbyCountdownInterval = null;
 let lobbyState = null;
 let lobbySettings = {
-  maxPlayers: CONFIG.MAX_PLAYERS,
+  maxPlayers: CONFIG.DEFAULT_MAX_PLAYERS,
   minPlayers: 2,
   matchDuration: CONFIG.MATCH_DURATION,
   mapId: CONFIG.DEFAULT_MAP_ID

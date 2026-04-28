@@ -216,7 +216,7 @@ test('host and controller pages load, connect, and start a match without browser
   await controllerPage.fill('#room-code', roomCode.trim());
   await controllerPage.click('#connect-btn');
   await controllerPage.waitForFunction(() => getComputedStyle(document.getElementById('lobby-wait-screen')).display !== 'none');
-  await hostPage.waitForFunction(() => document.getElementById('lobby-player-count').textContent.trim() === '1/8');
+  await hostPage.waitForFunction(() => document.getElementById('lobby-player-count').textContent.trim() === '1/24');
 
   await hostPage.fill('#setting-min-players', '1');
   await hostPage.dispatchEvent('#setting-min-players', 'change');

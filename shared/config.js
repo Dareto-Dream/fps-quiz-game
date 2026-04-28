@@ -1,7 +1,8 @@
 // Game configuration - Server-side only
 module.exports = {
   SERVER_PORT: 3000,
-  MAX_PLAYERS: 24,
+  MAX_PLAYERS: 30,
+  DEFAULT_MAX_PLAYERS: 24,
   MIN_PLAYERS: 2,
   PLAYER_MAX_HEALTH: 100,
   PLAYER_MAX_AMMO: 30,
@@ -32,12 +33,40 @@ module.exports = {
     '#FF44FF', // Magenta
     '#44FFFF', // Cyan
     '#FFA500', // Orange
-    '#9400D3'  // Purple
+    '#9400D3', // Purple
+    '#2ECC71', // Emerald
+    '#3498DB', // Sky
+    '#E74C3C', // Crimson
+    '#F1C40F', // Gold
+    '#9B59B6', // Violet
+    '#1ABC9C', // Teal
+    '#E67E22', // Amber
+    '#EC407A', // Pink
+    '#00BCD4', // Aqua
+    '#8BC34A', // Lime
+    '#3F51B5', // Indigo
+    '#FF7043', // Coral
+    '#CDDC39', // Chartreuse
+    '#607D8B', // Steel
+    '#795548', // Brown
+    '#FF9800', // Tangerine
+    '#009688', // Seafoam
+    '#673AB7', // Deep Purple
+    '#4CAF50', // Green Two
+    '#2196F3', // Blue Two
+    '#F44336', // Red Two
+    '#FFC107'  // Yellow Two
   ],
   
   COLOR_NAMES: [
     'Red', 'Green', 'Blue', 'Yellow',
-    'Magenta', 'Cyan', 'Orange', 'Purple'
+    'Magenta', 'Cyan', 'Orange', 'Purple',
+    'Emerald', 'Sky', 'Crimson', 'Gold',
+    'Violet', 'Teal', 'Amber', 'Pink',
+    'Aqua', 'Lime', 'Indigo', 'Coral',
+    'Chartreuse', 'Steel', 'Brown', 'Tangerine',
+    'Seafoam', 'Deep Purple', 'Green Two', 'Blue Two',
+    'Red Two', 'Yellow Two'
   ],
   
   // Arena dimensions

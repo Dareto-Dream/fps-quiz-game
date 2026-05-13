@@ -901,6 +901,7 @@ io.on('connection', (socket) => {
     const activeQuiz = Array.isArray(socket.activeQuiz) ? socket.activeQuiz : [];
     const answersById = new Map();
     const answeredIds = new Set();
+    const quizResults = [];
     let correctCount = 0;
 
     answers.forEach(answer => {
@@ -914,8 +915,9 @@ io.on('connection', (socket) => {
 
     activeQuiz.forEach(question => {
       const answer = answersById.get(question.id);
-      const selectedOption = answer ? Number.parseInt(answer.selectedOption, 10) : -1;
-      const isValidAnswer = Number.isInteger(selectedOption) && selectedOption >= 0 && selectedOption <= 3;
+      const parsedOption = answer ? Number.parseInt(answer.selectedOption, 10) : -1;
+      const selectedOption = Number.isInteger(parsedOption) ? parsedOption : -1;
+      const isValidAnswer = selectedOption >= 0 && selectedOption < question.options.length;
       const isCorrect = isValidAnswer && selectedOption === question.correct;
 
       if (isCorrect) {
@@ -923,9 +925,25 @@ io.on('connection', (socket) => {
       }
 
       recordQuizAccuracy(room, socket.id, question, isCorrect);
+      quizResults.push({
+        questionId: String(question.id),
+        question: question.question,
+        selectedOption: isValidAnswer ? selectedOption : -1,
+        selectedOptionText: isValidAnswer ? question.options[selectedOption] : null,
+        correctOption: question.correct,
+        correctOptionText: question.options[question.correct],
+        isCorrect
+      });
     });
 
     socket.activeQuiz = null;
+
+    socket.emit('quiz-results', {
+      correctCount,
+      totalQuestions: activeQuiz.length,
+      results: quizResults,
+      timestamp: Date.now()
+    });
 
     // Forward to host to process ammo reward
     const hostSocket = getHostSocket(room);

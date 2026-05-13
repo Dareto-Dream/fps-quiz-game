@@ -268,7 +268,7 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
   assert.equal(quiz.questions.length, 3);
   assert.equal(Object.hasOwn(quiz.questions[0], 'correct'), false);
 
-  const answers = quiz.questions.map(question => {
+  const answers = quiz.questions.map((question, index) => {
     const source = questions.find(candidate =>
       candidate.question === question.question &&
       JSON.stringify(candidate.options) === JSON.stringify(question.options)
@@ -277,25 +277,35 @@ test('server room flow sanitizes input, validates quiz answers, and forwards hos
     assert.ok(source, `could not find source question for ${question.question}`);
     return {
       questionId: question.id,
-      selectedOption: source.correct
+      selectedOption: index === 0 ? (source.correct + 1) % source.options.length : source.correct
     };
   });
 
   const quizCompletedPromise = waitForEvent(host, 'quiz-completed');
+  const quizResultsPromise = waitForEvent(controller, 'quiz-results');
   controller.emit('submit-quiz', { answers: [answers[0], ...answers], correctCount: 0 });
-  const quizCompleted = await quizCompletedPromise;
+  const [quizCompleted, quizResults] = await Promise.all([quizCompletedPromise, quizResultsPromise]);
   assert.equal(quizCompleted.playerId, controller.id);
-  assert.equal(quizCompleted.correctCount, 3);
+  assert.equal(quizCompleted.correctCount, 2);
   assert.equal(quizCompleted.accuracyReport.totalAttempts, 3);
+  assert.equal(quizResults.correctCount, 2);
+  assert.equal(quizResults.totalQuestions, 3);
+  assert.equal(quizResults.results.length, 3);
+  assert.equal(quizResults.results[0].isCorrect, false);
+  assert.equal(quizResults.results[1].isCorrect, true);
+  assert.equal(quizResults.results[0].selectedOption, answers[0].selectedOption);
+  assert.equal(typeof quizResults.results[0].correctOptionText, 'string');
+  assert.notEqual(quizResults.results[0].correctOptionText, '');
 
   const accuracyPromise = waitForEvent(host, 'accuracy-report');
   host.emit('request-accuracy-report');
   const accuracyReport = await accuracyPromise;
   assert.equal(accuracyReport.totalAttempts, 3);
   assert.equal(accuracyReport.questions.length, 3);
-  assert.equal(accuracyReport.questions[0].accuracy, 100);
+  assert.equal(accuracyReport.questions.filter(question => question.accuracy === 0).length, 1);
+  assert.equal(accuracyReport.questions.filter(question => question.accuracy === 100).length, 2);
   assert.equal(accuracyReport.players[0].playerName, 'Ace Pilot');
-  assert.equal(accuracyReport.players[0].accuracy, 100);
+  assert.equal(accuracyReport.players[0].accuracy, 67);
 
   const deathPromise = waitForEvent(controller, 'player-died');
   host.emit('player-death', {

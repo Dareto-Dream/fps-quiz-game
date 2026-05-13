@@ -76,8 +76,11 @@ let lastInputLogAt = 0;
 
 // Quiz state
 let quizActive = false;
+let quizPendingResults = false;
+let quizReviewActive = false;
 let quizQuestions = [];
 let quizAnswers = [];
+let deferredAmmoNotice = null;
 
 // Three.js
 let scene, camera, renderer;
@@ -558,6 +561,7 @@ function connectToServer() {
   socket.on('player-died', handlePlayerDied);
   socket.on('player-respawned', handlePlayerRespawned);
   socket.on('quiz-questions', handleQuizQuestions);
+  socket.on('quiz-results', handleQuizResults);
   socket.on('ammo-updated', handleAmmoUpdated);
   socket.on('match-timer', handleMatchTimer);
   socket.on('match-end', handleMatchEnd);
@@ -1038,16 +1042,34 @@ function handleQuizQuestions(data) {
   quizQuestions = Array.isArray(data.questions) ? data.questions : [];
   quizAnswers = new Array(quizQuestions.length).fill(-1);
   quizActive = true;
+  quizPendingResults = false;
+  quizReviewActive = false;
+  setQuizTitle('RELOAD QUIZ');
   renderQuiz();
-  document.getElementById('submit-quiz-btn').disabled = true;
+  setQuizSubmitState({ text: 'SUBMIT', disabled: true });
+  document.getElementById('quiz-modal').style.display = 'flex';
+  requestAnimationFrame(resetQuizScroll);
+}
+
+function handleQuizResults(data = {}) {
+  quizActive = false;
+  quizPendingResults = false;
+  quizReviewActive = true;
+  renderQuizResults(data);
   document.getElementById('quiz-modal').style.display = 'flex';
   requestAnimationFrame(resetQuizScroll);
 }
 
 function handleAmmoUpdated(data) {
   myAmmo = data.ammo;
-  showNotification('ammo-notification', `+${data.ammoGained} AMMO`, 2000);
   updateHUD();
+
+  if (quizPendingResults || quizReviewActive) {
+    deferredAmmoNotice = data;
+    return;
+  }
+
+  showAmmoNotification(data);
 }
 
 function handleMatchTimer(data) {
@@ -1153,6 +1175,11 @@ function showNotification(elementId, text, duration) {
   setTimeout(() => { el.style.opacity = '0'; }, duration);
 }
 
+function showAmmoNotification(data = {}) {
+  const ammoGained = Number(data.ammoGained) || 0;
+  showNotification('ammo-notification', `+${ammoGained} AMMO`, 2000);
+}
+
 // ============================================
 // QUIZ
 // ============================================
@@ -1182,6 +1209,69 @@ function renderQuiz() {
   });
 }
 
+function renderQuizResults(data = {}) {
+  const container = document.getElementById('quiz-questions');
+  const results = Array.isArray(data.results) ? data.results : [];
+  const correctCount = Number.isFinite(Number(data.correctCount))
+    ? Number(data.correctCount)
+    : results.filter(result => result && result.isCorrect).length;
+  const totalQuestions = Number.isFinite(Number(data.totalQuestions))
+    ? Number(data.totalQuestions)
+    : results.length;
+
+  setQuizTitle('RELOAD RESULTS');
+  container.replaceChildren();
+
+  const summary = document.createElement('div');
+  summary.className = 'quiz-result-summary';
+  summary.textContent = `${correctCount}/${totalQuestions} RIGHT`;
+  container.appendChild(summary);
+
+  if (!results.length) {
+    const empty = document.createElement('div');
+    empty.className = 'quiz-result-empty';
+    empty.textContent = 'No reload answers were checked.';
+    container.appendChild(empty);
+    setQuizSubmitState({ text: 'CONTINUE', disabled: false });
+    return;
+  }
+
+  results.forEach((result, index) => {
+    const isCorrect = Boolean(result && result.isCorrect);
+    const selectedText = result && result.selectedOptionText ? result.selectedOptionText : 'No answer';
+    const correctText = result && result.correctOptionText ? result.correctOptionText : 'Unknown';
+
+    const questionDiv = document.createElement('div');
+    questionDiv.className = `quiz-question quiz-review ${isCorrect ? 'correct' : 'wrong'}`;
+
+    const header = document.createElement('div');
+    header.className = 'quiz-result-header';
+
+    const questionText = document.createElement('div');
+    questionText.className = 'question-text';
+    questionText.textContent = `${index + 1}. ${(result && result.question) || 'Question'}`;
+
+    const badge = document.createElement('div');
+    badge.className = `quiz-result-badge ${isCorrect ? 'right' : 'wrong'}`;
+    badge.textContent = isCorrect ? 'RIGHT' : 'WRONG';
+
+    header.append(questionText, badge);
+
+    const selectedLine = document.createElement('div');
+    selectedLine.className = `quiz-answer-line ${isCorrect ? 'right' : 'wrong'}`;
+    selectedLine.textContent = `You: ${selectedText}`;
+
+    const correctLine = document.createElement('div');
+    correctLine.className = 'quiz-answer-line right';
+    correctLine.textContent = `Correct: ${correctText}`;
+
+    questionDiv.append(header, selectedLine, correctLine);
+    container.appendChild(questionDiv);
+  });
+
+  setQuizSubmitState({ text: 'CONTINUE', disabled: false });
+}
+
 function renderWinnerInfo(winner) {
   const winnerInfo = document.getElementById('winner-info');
   winnerInfo.replaceChildren();
@@ -1192,6 +1282,42 @@ function renderWinnerInfo(winner) {
   winnerInfo.append(name, ` with ${winner.kills} kills`);
 }
 
+function setQuizTitle(text) {
+  const title = document.querySelector('.quiz-container h2');
+  if (title) {
+    title.textContent = text;
+  }
+}
+
+function setQuizSubmitState({ text, disabled }) {
+  const button = document.getElementById('submit-quiz-btn');
+  if (text) {
+    button.textContent = text;
+  }
+  button.disabled = Boolean(disabled);
+}
+
+function setQuizOptionsDisabled(disabled) {
+  document.querySelectorAll('.quiz-option').forEach(button => {
+    button.disabled = Boolean(disabled);
+  });
+}
+
+function closeQuizReview() {
+  quizReviewActive = false;
+  quizPendingResults = false;
+  quizQuestions = [];
+  quizAnswers = [];
+  document.getElementById('quiz-modal').style.display = 'none';
+  setQuizTitle('RELOAD QUIZ');
+  setQuizSubmitState({ text: 'SUBMIT', disabled: true });
+
+  if (deferredAmmoNotice) {
+    showAmmoNotification(deferredAmmoNotice);
+    deferredAmmoNotice = null;
+  }
+}
+
 function resetQuizScroll() {
   const container = document.getElementById('quiz-questions');
   const panel = document.querySelector('.quiz-container');
@@ -1200,6 +1326,8 @@ function resetQuizScroll() {
 }
 
 function selectQuizOption(questionIndex, optionIndex) {
+  if (!quizActive || quizPendingResults) return;
+
   quizAnswers[questionIndex] = optionIndex;
   
   for (let i = 0; i < 4; i++) {
@@ -1212,20 +1340,27 @@ function selectQuizOption(questionIndex, optionIndex) {
 }
 
 function submitQuiz() {
-  if (!quizActive) return;
+  if (quizReviewActive) {
+    closeQuizReview();
+    return;
+  }
+
+  if (!quizActive || quizPendingResults) return;
   
   const answers = quizQuestions.map((q, i) => ({
     questionId: q.id,
     selectedOption: quizAnswers[i]
   }));
-  socket.emit('submit-quiz', { answers });
-  
+
+  quizPendingResults = true;
   quizActive = false;
-  document.getElementById('quiz-modal').style.display = 'none';
+  setQuizOptionsDisabled(true);
+  setQuizSubmitState({ text: 'CHECKING...', disabled: true });
+  socket.emit('submit-quiz', { answers });
 }
 
 function requestQuiz() {
-  if (socket && connected && !quizActive) {
+  if (socket && connected && !quizActive && !quizPendingResults && !quizReviewActive) {
     socket.emit('request-quiz');
   }
 }
